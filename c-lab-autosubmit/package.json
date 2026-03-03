@@ -1,0 +1,61 @@
+{
+  "name": "c-lab-autosubmit",
+  "displayName": "C-Lab AutoSubmit",
+  "description": "C 언어 실습 자동화 및 과제 제출 시스템",
+  "version": "1.0.0",
+  "publisher": "c-lab-autosubmit",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chaebinkim25/C-Lab-AutoSubmit"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Education",
+    "Other"
+  ],
+  "icon": "images/icon.png",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "c-lab-autosubmit.startTask",
+        "title": "C-Lab: 실습 시작",
+        "icon": "$(play)"
+      },
+      {
+        "command": "c-lab-autosubmit.submitTask",
+        "title": "C-Lab: 최종 과제 제출",
+        "icon": "$(rocket)"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "20.2.5",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "@vscode/test-electron": "^2.3.2",
+    "eslint": "^8.41.0",
+    "glob": "^8.1.0",
+    "mocha": "^10.2.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "axios": "^1.4.0"
+  }
+}
