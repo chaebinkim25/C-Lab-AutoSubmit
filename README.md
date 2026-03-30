@@ -18,10 +18,10 @@ venv\Scripts\activate
 
 실행 결과: 터미널 프롬프트 앞에 `(venv)` 표시됨
 
-**FastAPI, Uvicorn 설치**
+**Pydantic, FastAPI, Uvicorn 설치**
 
 ```bash
-pip install fastapi uvicorn
+pip install pydantic fastapi uvicorn
 ```
 
 실행 결과: FastAPI와 Uvicorn이 설치되었다는 메시지가 나옴
