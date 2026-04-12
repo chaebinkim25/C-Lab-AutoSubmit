@@ -1,296 +1,630 @@
-import json # Ensure json is imported at the top if not already
-import os
-import ipaddress
-from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware
+# main.py
+from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel
-from typing import List, Dict, Any
-from datetime import datetime
-from zoneinfo import ZoneInfo # 💡 [수정됨] 명시적인 KST 타임존 처리를 위해 추가
-from dotenv import load_dotenv
-from contextlib import asynccontextmanager
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
+from typing import List, Dict, Any, Optional
+from database_util import get_db_connection
+import os
+import json
+import copy
+import random
+import re
 import logging
-import database  # 방금 만든 DB 모듈 임포트
+from logging.handlers import RotatingFileHandler
 
-logger = logging.getLogger(__name__)
-
-# .env 파일 로드
-
-# 현재 main.py 파일이 있는 위치를 기준으로 절대 경로 생성
+# --- Global File Path ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(BASE_DIR, ".env")
 
-# 절대 경로로 .env 파일 로드
-load_dotenv(ENV_PATH)
+# --- Configuration: Logging ---
+LOG_FILE = os.path.join(BASE_DIR, "c_lab_api.log")
 
-# --- 서버 시작 시 DB 초기화 로직 ---
-@asynccontextmanager
-async def lifespan(app: FastAPI): 
-    print("🚀 서버가 시작되었습니다. (학생별 개별 DB 모드)")
-    yield
-    print("서버 종료")
-
-# app 객체 생성 시 lifespan 등록
-app = FastAPI(title="C-Lab AutoSubmit API", lifespan=lifespan)
-
-# --- CORS 설정 ---
-# VS Code 익스텐션 등 외부 클라이언트의 접근을 허용합니다.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], # 실제 배포 시에는 보안을 위해 특정 도메인으로 제한할 수 있습니다.
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# --- Pydantic 데이터 모델 (API_SPEC.md 반영 업데이트) ---
-
-class DiffPayload(BaseModel):
-    machine_id: str   # [추가됨] 익스텐션 고유 식별자 (IP 스푸핑 방어용)
-    student_id: str = "unknown" # 👈 추가됨
-    timestamp: str
-    file_name: str
-    changes: List[Dict[str, Any]]
-
-class DebugPayload(BaseModel):
-    machine_id: str   # [추가됨] 익스텐션 고유 식별자
-    student_id: str = "unknown" # 👈 추가됨
-    timestamp: str
-    event: str
-    source_code: str
-
-class SubmitPayload(BaseModel):
-    machine_id: str   # [추가됨] 익스텐션 고유 식별자
-    student_id: str
-    student_name: str
-    timestamp: str
-    source_code: str
-
-# [추가됨] 데이터 모델 부분에 아래 클래스를 추가해 주세요.
-class DebugLogPayload(BaseModel):
-    machine_id: str
-    student_id: str = ""  # 학생이 [실습 시작]을 누르기 전에 디버거를 켤 수도 있으므로 기본값은 빈 문자열
-    timestamp: str
-    event_type: str
-    content: str
-
-# 💡 [수정됨] IP 화이트리스트 검증 로직을 제거하고, 로깅용 IP만 추출합니다.
-def verify_ip(request: Request):
-    direct_ip = request.client.host 
+# Context Filter to handle Student Number, IP, AND Machine ID
+class ContextFilter(logging.Filter):
+    def filter(self, record):
+        if not hasattr(record, 'student_number'):
+            record.student_number = "SYSTEM"
+        if not hasattr(record, 'ip_address'):
+            record.ip_address = "LOCAL"
+        if not hasattr(record, 'machine_id'):
+            record.machine_id = "NO_HW_ID"
+        return True
     
-    # Nginx 등 리버스 프록시를 거쳐온 경우 원래 클라이언트 IP 추출
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        client_ip_str = forwarded_for.split(",")[0].strip()
-    else:
-        client_ip_str = direct_ip
+# Create a custom logger
+logger = logging.getLogger("C-Lab-API")
+logger.setLevel(logging.DEBUG)
+logger.addFilter(ContextFilter()) # Attach the filter
 
-    # 🚨 기존의 허용 IP(ALLOWED_IPS) 대역 검사 및 HTTPException(403) 발생 로직을 모두 삭제했습니다.
-    # 이제 어떤 IP에서 접속하든 모두 통과됩니다.
+# Create handlers (File and Console)
+# 5MB per file, keep 5 backups
+file_handler = RotatingFileHandler(LOG_FILE, maxBytes=5_000_000, backupCount=5)
+console_handler = logging.StreamHandler()
 
-    # DB 저장을 위해 IP 정보만 그대로 반환합니다.
-    return {"client_ip": client_ip_str, "direct_ip": direct_ip}
-# --- API 엔드포인트 (기본 라우팅) ---
+# Create formatters and add it to handlers
+log_format = logging.Formatter('%(asctime)s - [%(levelname)s] - [%(ip_address)s] - [%(machine_id)s] - [%(student_number)s] - %(message)s')
+file_handler.setFormatter(log_format)
+console_handler.setFormatter(log_format)
 
-@app.get("/")
-def root():
-    return {"message": "C-Lab AutoSubmit 서버가 정상 작동 중입니다."}
+# Add handlers to the logger
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
-# 1-2. 수업 시간 통제 API
-@app.get("/api/check-time")
+logger.info("Starting C-Lab AutoSubmit API Server...")
+
+app = FastAPI(title="C-Lab AutoSubmit API")
+
+# Explicitly define the timezone as KST
+KST = ZoneInfo("Asia/Seoul")
+
+# --- Configuration: Define Lab Hours ---
+# 0 = Monday, 1 = Tuesday, ..., 4 = Friday
+LAB_DAY_OF_WEEK = 2 
+LAB_START_TIME = time(7, 0)   # 07:00 AM
+LAB_END_TIME = time(13, 0)    # 01:00 PM
+
+# --- Response Model ---
+class TimeCheckResponse(BaseModel):
+    is_lab_time: bool
+    current_server_time: str
+    required_version: str
+
+@app.get("/api/check-time", response_model=TimeCheckResponse)
 def check_time():
-    # 💡 [핵심 버그 수정] 항상 한국 시간(KST)을 기준으로 현재 시간을 가져옵니다.
-    kst = ZoneInfo("Asia/Seoul")
-    now = datetime.now(kst)
-
-    # .env에서 스케줄 읽기 (없거나 에러 시 빈 딕셔너리로 처리)
-    schedule_str = os.getenv("CLASS_SCHEDULE", "{}")
-    try:
-        schedule = json.loads(schedule_str)
-    except json.JSONDecodeError:
-        schedule = {}
-
-    # 현재 요일 (0:월요일 ~ 6:일요일)
-    current_weekday = str(now.weekday())
-    is_active = False
-
-    # 1. 오늘 요일이 스케줄에 등록되어 있는지 확인
-    if current_weekday in schedule:
-        start_str, end_str = schedule[current_weekday]
-        
-        # 2. 문자열 시간("10:00")을 시간/분 숫자로 분리
-        start_hour, start_minute = map(int, start_str.split(":"))
-        end_hour, end_minute = map(int, end_str.split(":"))
-        
-        # 3. 오늘의 날짜에 시작/종료 시간을 결합하여 타임스탬프 생성
-        start_time = now.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
-        end_time = now.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
-        
-        # 4. 현재 시간이 시작~종료 시간 사이에 있는지 판별
-        if start_time <= now <= end_time:
-            is_active = True
-   
-    return {
-        "active": is_active,
-        "message": "C프로그래밍 실습이 진행 중입니다." if is_active else "현재는 실습 시간이 아닙니다.",
-        "server_time": now.isoformat(),
-        # [추가됨] 프론트엔드와의 호환성 및 날짜 비교를 위해 YYYY-MM-DD 포맷 추가
-        "server_date": now.strftime("%Y-%m-%d")
-    }
-
-# 기존의 @app.get("/api/check-time") 아래에 추가해 주세요.
-@app.get("/api/lab/secret")
-def get_backup_secret(ips: dict = Depends(verify_ip)):
     """
-    [보안] 실습 시작 시점에 오프라인 백업 암호화용 비밀키를 클라이언트(메모리)에 제공합니다.
-    화이트리스트 IP에서만 접근 가능합니다.
+    Checks if the current server time falls within the scheduled lab hours in KST.
     """
-    # .env 파일에서 가져오되, 설정이 없으면 임시 키를 반환
-    secret = os.getenv("BACKUP_SECRET_PASS", "c-lab-default-offline-secret-2026")
-    return {"secret": secret}
+    # Force datetime to evaluate the current time in KST
+    now = datetime.now(KST)
+    current_time = now.time()
+    current_day = now.weekday()
 
-# 기존의 @app.get("/api/lab/secret") 아래에 추가해 주세요.
-
-@app.get("/api/lab/skeleton")
-def get_skeleton_code(ips: dict = Depends(verify_ip)):
-    """
-    실습 시작 시 제공할 기본 C 언어 뼈대 코드(Skeleton Code)를 반환합니다.
-    (주차별 실습 내용에 따라 서버에서 유연하게 변경 가능)
-    """
-    # 기본 C89 스켈레톤 코드
-    # 필요에 따라 파일에서 읽어오거나 데이터베이스에서 조회하도록 확장할 수 있습니다.
-    skeleton = (
-        "int main(void)\n"
-        "{\n"
-        "        return 0;\n"
-        "}\n"
+    # Validate against day of the week and time bounds
+    is_active = (
+        current_day == LAB_DAY_OF_WEEK and
+        LAB_START_TIME <= current_time <= LAB_END_TIME
     )
-    return {"skeleton": skeleton}
 
-# Track A: 1초 단위 Diff 수집 API
+    return TimeCheckResponse(
+        is_lab_time=is_active,
+        current_server_time=now.isoformat(),
+        required_version="1.0.5"
+    )
+
+# --- Response Models ---
+class TaskItem(BaseModel):
+    task_id: str
+    title: str
+    description: str
+    skeleton_code: str
+
+# --- Cache Variables ---
+_cached_tasks = None
+_last_mtime = 0.0
+
+_default_task = {
+    "task_id": "c lab",
+    "title": "base code",
+    "description": "minimal code with main function definition.",
+    "skeleton_code": 
+"""
+int main(void)
+{
+        return 0;
+}
+"""
+}
+
+# --- File Path ---
+TASKS_JSON_PATH = os.path.join(BASE_DIR, "tasks.json")
+
+@app.get("/api/lab/tasks", response_model=List[TaskItem])
+def get_lab_tasks(request: Request, student_id: str = "unknown"):
+    """
+    Retrieves the ordered list of skeleton code assignments for the current day's session.
+    The client uses the length of this list to manage the UI state (mid vs final submission).
+    Based on student_id, replace {{RAND_min_max}} tag to randomized integer. 
+    """
+    global _cached_tasks, _last_mtime
+    client_ip = request.client.host if request.client else "UNKNOWN"
+    
+    try:
+        current_mtime = os.path.getmtime(TASKS_JSON_PATH)
+
+        if _cached_tasks is None or current_mtime > _last_mtime:
+            with open(TASKS_JSON_PATH, "r", encoding="utf-8") as f:
+                _cached_tasks = json.load(f)
+            _last_mtime = current_mtime
+            # No machine_id payload here yet, so we use N/A
+            logger.info("tasks.json reloaded and cached.", extra={'student_number': student_id, 'ip_address': client_ip, 'machine_id': 'N/A'})
+
+        # 1. deep copy the original cache
+        personalized_tasks = copy.deepcopy(_cached_tasks.get("tasks", []))
+
+        # 2. analyze each skeleton code and replace placeholders with the corresponding random numbers
+        for task in personalized_tasks:
+            skeleton_code = task.get("skeleton_code", "")
+
+            # use private Random instance for each task
+            # generate seed by concatenating student_id and task_id
+            seed_string = f"{student_id}_{task.get('task_id', '')}"
+            prng = random.Random(seed_string)
+
+            # find {{RAND_min_max}} pattern and replace to random number 
+
+            # from the matched pattern, extract the range and generate random number
+            def replace_rand(match):
+                min_val = int(match.group(1))
+                max_val = int(match.group(2))
+                # return personalized random number within the range
+                return str(prng.randint(min_val, max_val))
+
+            # regex expression for {{RAND_min_max}} pattern
+            rand_pattern = r"\{\{RAND_(-?\d+)_(-?\d+)\}\}"
+
+            # 정규표현식을 통해 모든 태그 치환 적용
+            modified_skeleton = re.sub(rand_pattern, replace_rand, skeleton_code)
+            task["skeleton_code"] = modified_skeleton
+
+        return personalized_tasks
+
+    except FileNotFoundError as e:
+        logger.error(f"File not found, Failed to load tasks.json: {e}", extra={'student_number': student_id, 'ip_address': client_ip, 'machine_id': 'N/A'})
+        return [_default_task]
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Json decode error, Failed to load tasks.json: {e}", extra={'student_number': student_id, 'ip_address': client_ip, 'machine_id': 'N/A'})
+        return [_default_task]
+
+
+# --- Request Model ---
+class SessionStartRequest(BaseModel):
+    student_number: str
+    student_name: str
+    machine_id: str
+    os_platform: str
+
+# --- Response Model ---
+class SessionStartResponse(BaseModel):
+    status: str
+    message: str
+
+# --- Cache Variables ---
+session_count = {}
+
+@app.post("/api/session/start", response_model=SessionStartResponse)
+def start_session(request: Request, payload: SessionStartRequest):
+    """
+    Initializes a lab session and dynamically provisions the student's SQLite DB shard.
+    """
+    client_ip = request.client.host if request.client else "UNKNOWN"
+    log_context = {'student_number': payload.student_number, 'ip_address': client_ip, 'machine_id': payload.machine_id}
+
+    # 0. Get session start count of the student
+    if (payload.student_number in session_count):
+        session_count[payload.student_number] += 1
+    else:
+        session_count[payload.student_number] = 0
+
+    try:
+        # 1. Provision the SQLite shard (creates the file and schema if it doesn't exist)
+        conn = get_db_connection(
+            payload.student_number, 
+            payload.student_name, 
+            f"session{session_count.get(payload.student_number, '')}"
+        )
+
+        # 2. Record the immutable session metadata
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO session_metadata (student_number, student_name, machine_id, os_platform)
+            VALUES (?, ?, ?, ?)
+        """, (
+            payload.student_number, 
+            payload.student_name, 
+            payload.machine_id, 
+            payload.os_platform
+        ))
+        
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Session registered on {payload.os_platform}", extra=log_context)
+
+        # 3. Return success (The client already has the skeleton code from /api/lab/tasks)
+        return SessionStartResponse(
+            status="success",
+            message=f"Session registered and database provisioned for {payload.student_number}."
+        )
+
+    except HTTPException as e:
+        logger.error(f"HTTP Exception. Session start failed: {e}", exc_info=True, extra=log_context)
+        
+        # If we manually raised an HTTPException (like a 404), 
+        # let it pass through to the client as-is.
+        raise
+
+    except Exception as e:
+        logger.error(f"Session start failed: {e}", exc_info=True, extra=log_context)
+
+        # Catch any DB or OS errors and return a 500 status to the client
+        raise HTTPException(status_code=500, detail=f"Failed to start session: {str(type(e))}: {str(e)}")
+
+# --- Request Model ---
+class TrackDiffRequest(BaseModel):
+    student_number: str          # Needed to locate the DB shard
+    student_name: str            # Needed to loacte the DB shard
+    machine_id: str              # Used for security validation
+    file_name: str
+    timestamp: str
+    diff_payload: str
+    is_baseline: bool = False    # Helps distinguish the initial skeleton from actual typing
+
 @app.post("/api/track/diff")
-def track_diff(payload: DiffPayload, ips: dict = Depends(verify_ip)):
+def track_diff(request: Request, payload: TrackDiffRequest):
+    """
+    Receives and stores code modifications (or the initial baseline) into the student's DB shard.
+    """
+    client_ip = request.client.host if request.client else "UNKNOWN"
+    log_context = {'student_number': payload.student_number, 'ip_address': client_ip, 'machine_id': payload.machine_id}
+
     try:
-        database.insert_diff(
-            payload.machine_id, payload.student_id, ips["client_ip"], ips["direct_ip"], 
-            payload.timestamp, payload.file_name, payload.changes
+        # 1. Connect to the specific student's DB shard
+        conn = get_db_connection(
+            payload.student_number, 
+            payload.student_name, 
+            f"session{session_count.get(payload.student_number, '')}"
         )
-        print(f"[Diff 저장 완료] IP: {ips['client_ip']}, Machine: {payload.machine_id[:8]}...")
-        return {"status": "success"}
-    except Exception as e:
-        logger.error(f"Diff DB 저장 에러: {str(e)}")
-        raise HTTPException(status_code=500, detail="DB 저장 실패")
-
-@app.post("/api/track/diff/batch")
-def track_diff_batch(payload: List[DiffPayload], ips: dict = Depends(verify_ip)):
-    if not payload:
-        return {"status": "success", "message": "Empty batch"}
-
-    # Group by student_id to ensure we write to the correct independent DB.
-    # Assuming one VS Code instance = one student session.
-    student_id = payload[0].student_id 
+        cursor = conn.cursor()
+        
+        # 2. Security Check: Validate the Machine ID (Core Policy #5)
+        cursor.execute("SELECT machine_id FROM session_metadata LIMIT 1")
+        session_meta = cursor.fetchone()
+        
+        if not session_meta:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Session not initialized.")
+            
+        if session_meta[0] != payload.machine_id:
+            conn.close()
+            # If the machine ID changes mid-session, someone might be spoofing requests!
+            raise HTTPException(status_code=403, detail="Machine ID mismatch. Unauthorized tracking attempt.")
+            
+        # 3. Insert the diff payload
+        cursor.execute("""
+            INSERT INTO diff_logs (file_name, timestamp, diff_payload)
+            VALUES (?, ?, ?)
+        """, (payload.file_name, payload.timestamp, payload.diff_payload))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"status": "success", "message": f"Diff for {payload.file_name} stored securely."}
     
-    # Transform Pydantic models into a list of tuples for SQLite executemany
-    batch_data = [
-        (
-            item.machine_id, 
-            item.student_id, 
-            ips["client_ip"], 
-            ips["direct_ip"], 
-            item.timestamp, 
-            item.file_name, 
-            json.dumps(item.changes) # Convert the changes list back to a JSON string
-        )
-        for item in payload
-    ]
+    except HTTPException as e:
+        logger.error(f"Diff tracking failed: {e}", extra=log_context)
+        
+        # If we manually raised an HTTPException (like a 404), 
+        # let it pass through to the client as-is.
+        raise
+
+    except Exception as e:
+        logger.error(f"Diff tracking failed: {e}", extra=log_context)
+
+        # Catch unexpected errors (e.g., file permission issues)
+        raise HTTPException(status_code=500, detail=str(e))
     
-    try:
-        database.insert_diff_batch(student_id, batch_data)
-        print(f"[Diff Batch 저장 완료] IP: {ips['client_ip']}, {len(batch_data)}개 레코드 일괄 삽입")
-        return {"status": "success", "inserted": len(batch_data)}
-    except Exception as e:
-        logger.error(f"Diff Batch DB 저장 에러: {str(e)}")
-        raise HTTPException(status_code=500, detail="DB 일괄 저장 실패")
+# --- Request Model ---
+class TrackDebugRequest(BaseModel):
+    student_number: str
+    student_name: str
+    machine_id: str
+    
+    # Telemetry Payloads
+    source_snapshot: str
+    breakpoints: List[Dict[str, Any]]         # e.g., [{"file": "main.c", "line": 12}]
+    execution_actions: List[Dict[str, Any]]   # e.g., [{"action": "step-over", "time": "..."}]
+    variable_inspection: Dict[str, Any]       # e.g., {"x": "5", "arr[0]": "10"}
+    output_streams: Dict[str, str]            # e.g., {"stdout": "Hello World\n", "stderr": ""}
 
-# Track A: 디버그 가제출 API
-@app.post("/api/track/debug")
-def track_debug(payload: DebugPayload, ips: dict = Depends(verify_ip)):
-    try:
-        database.insert_debug(
-            payload.machine_id, payload.student_id, ips["client_ip"], ips["direct_ip"], 
-            payload.timestamp, payload.event, payload.source_code
-        )
-        print(f"[Debug 저장 완료] IP: {ips['client_ip']}, Machine: {payload.machine_id[:8]}...")
-        return {"status": "success"}
-    except Exception as e:
-        logger.error(f"디버그 스냅샷 DB 저장 에러: {str(e)}")
-        raise HTTPException(status_code=500, detail="DB 저장 실패")
+@app.post("/api/track/debug-log")
+def track_debug_log(request: Request, payload: TrackDebugRequest):
+    """
+    Receives and logs detailed telemetry data from a completed debug session.
+    """
+    client_ip = request.client.host if request.client else "UNKNOWN"
+    log_context = {'student_number': payload.student_number, 'ip_address': client_ip, 'machine_id': payload.machine_id}
 
-# Track B: 최종 제출 API
-@app.post("/api/submit/final")
-def submit_final(payload: SubmitPayload, ips: dict = Depends(verify_ip)):
     try:
-        database.insert_submission( 
-            payload.machine_id, payload.student_id, payload.student_name, ips["client_ip"], ips["direct_ip"], 
-            payload.timestamp, payload.source_code
+        # 1. Connect to the specific student's DB shard
+        conn = get_db_connection(
+            payload.student_number, 
+            payload.student_name, 
+            f"session{session_count.get(payload.student_number, '')}"
         )
-        print(f"✅ [최종 제출 완료] 학번: {payload.student_id}, 이름: {payload.student_name} (IP: {ips['client_ip']})")
+        cursor = conn.cursor()
+        
+        # 2. Security Check: Validate the Machine ID
+        cursor.execute("SELECT machine_id FROM session_metadata LIMIT 1")
+        session_meta = cursor.fetchone()
+        
+        if not session_meta:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Session not initialized.")
+            
+        if session_meta[0] != payload.machine_id:
+            conn.close()
+            raise HTTPException(status_code=403, detail="Machine ID mismatch.")
+            
+        # 3. Serialize structured data to JSON strings for SQLite storage
+        cursor.execute("""
+            INSERT INTO debug_logs (
+                source_snapshot, 
+                breakpoints, 
+                execution_actions, 
+                variable_inspection, 
+                output_streams
+            ) VALUES (?, ?, ?, ?, ?)
+        """, (
+            payload.source_snapshot,
+            json.dumps(payload.breakpoints),
+            json.dumps(payload.execution_actions),
+            json.dumps(payload.variable_inspection),
+            json.dumps(payload.output_streams)
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"status": "success", "message": "Debug telemetry stored securely."}
+    
+    except HTTPException as e:
+        logger.error(f"Debug tracking failed: {e}", extra=log_context)
+
+        # If we manually raised an HTTPException (like a 404), 
+        # let it pass through to the client as-is.
+        raise        
+
+    except Exception as e:
+        logger.error(f"Debug tracking failed: {e}", extra=log_context)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Request Model ---
+class TrackSecurityRequest(BaseModel):
+    student_number: str
+    student_name: str
+    machine_id: str
+    timestamp: str
+    violation_type: str             # e.g., "Unauthorized Paste" or "Policy Tampering"
+    details: str                    # The pasted text, OR the settings they tried to change
+    file_name: Optional[str] = None # Optional: Only used for file-specific violations
+
+@app.post("/api/track/security-violation")
+def track_security_violation(request: Request, payload: TrackSecurityRequest):
+    """
+    Receives and logs all security and policy violations (Track B & Policy Enforcement).
+    """
+    client_ip = request.client.host if request.client else "UNKNOWN"
+    log_context = {'student_number': payload.student_number, 'ip_address': client_ip, 'machine_id': payload.machine_id}
+
+    try:
+        # 1. Connect to the specific student's DB shard
+        conn = get_db_connection(
+            payload.student_number, 
+            payload.student_name, 
+            f"session{session_count.get(payload.student_number, '')}"
+        )
+        cursor = conn.cursor()
+        
+        # 2. Security Check: Validate the Machine ID
+        cursor.execute("SELECT machine_id FROM session_metadata LIMIT 1")
+        session_meta = cursor.fetchone()
+        
+        if not session_meta:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Session not initialized.")
+            
+        if session_meta[0] != payload.machine_id:
+            conn.close()
+            raise HTTPException(status_code=403, detail="Machine ID mismatch. Unauthorized tracking attempt.")
+            
+        # 3. Log the unified violation
+        # NOTE: Make sure your database_util.py creates a `security_violations` table 
+        # instead of the old `paste_violations` table!
+        cursor.execute("""
+            INSERT INTO security_violations (timestamp, violation_type, file_name, details)
+            VALUES (?, ?, ?, ?)
+        """, (payload.timestamp, payload.violation_type, payload.file_name, payload.details))
+        
+        conn.commit()
+        conn.close()
+
+        logger.warning(
+            f"🚨 SECURITY ALARM: {payload.violation_type} ({payload.file_name or 'Global'}) - Details: {payload.details}",
+            extra=log_context
+        )
+        
+        return {"status": "success", "message": f"{payload.violation_type} securely logged."}
+
+    except HTTPException as e:
+        logger.error(f"Security log insertion failed: {e}", extra=log_context)
+        raise
+    except Exception as e:
+        logger.error(f"Security log insertion failed: {e}", extra=log_context)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Request Model ---
+class SessionSubmitRequest(BaseModel):
+    student_number: str
+    student_name: str
+    machine_id: str
+    submission_type: str  # Must be 'mid' or 'final'
+    task_id: str
+    source_files_snapshot: Dict[str, str]   # e.g., {"lab1_part1.c": "#include..."}
+    vscode_config_snapshot: Dict[str, str]  # e.g., {"launch.json": "{...}"}
+
+@app.post("/api/session/submit")
+def submit_session(request: Request, payload: SessionSubmitRequest):
+    """
+    Receives and stores mid-session and final code submissions, 
+    including workspace configuration snapshots.
+    """
+
+    client_ip = request.client.host if request.client else "UNKNOWN"
+    log_context = {'student_number': payload.student_number, 'ip_address': client_ip, 'machine_id': payload.machine_id}
+
+    if payload.submission_type not in ('mid', 'final'):
+        raise HTTPException(status_code=400, detail="Invalid submission type. Must be 'mid' or 'final'.")
+
+    try:
+        # 1. Connect to the specific student's DB shard
+        conn = get_db_connection(
+            payload.student_number, 
+            payload.student_name, 
+            f"session{session_count.get(payload.student_number, '')}"
+        )
+        cursor = conn.cursor()
+        
+        # 2. Security Check: Validate the Machine ID
+        cursor.execute("SELECT machine_id FROM session_metadata LIMIT 1")
+        session_meta = cursor.fetchone()
+        
+        if not session_meta:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Session not initialized.")
+            
+        if session_meta[0] != payload.machine_id:
+            conn.close()
+            raise HTTPException(status_code=403, detail="Machine ID mismatch. Unauthorized submission.")
+            
+        # 3. Insert the submission data (Serialize dicts to JSON strings)
+        cursor.execute("""
+            INSERT INTO submissions (
+                submission_type, 
+                task_id, 
+                source_files_snapshot, 
+                vscode_config_snapshot
+            ) VALUES (?, ?, ?, ?)
+        """, (
+            payload.submission_type,
+            payload.task_id,
+            json.dumps(payload.source_files_snapshot),
+            json.dumps(payload.vscode_config_snapshot)
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Submission ({payload.submission_type}) SUCCESS for task {payload.task_id}", extra=log_context)
+
         return {
             "status": "success", 
-            "message": "과제가 성공적으로 서버에 안전하게 저장되었습니다.",
-            "saved": True
+            "message": f"{payload.submission_type.capitalize()} submission for {payload.task_id} recorded successfully."
         }
-    except Exception as e:
-        error_msg = f"❌ [DB 저장 실패] 학번: {payload.student_id}, 사유: {str(e)}"
-        print(error_msg)
-        logger.error(error_msg)
-        raise HTTPException(
-            status_code=500, 
-            detail={"status": "error", "message": "서버 데이터베이스 저장에 실패했습니다. 코드가 삭제되지 않았습니다.", "saved": False}
-        )
 
-# Track C: 상세 디버그 로깅 API
-@app.post("/api/track/debug-log")
-def track_debug_log(payload: DebugLogPayload, ips: dict = Depends(verify_ip)):
+    except HTTPException as e:
+        logger.error(f"Submission failed: {e}", exc_info=True, extra=log_context)
+
+        # If we manually raised an HTTPException (like a 404), 
+        # let it pass through to the client as-is.
+        raise
+
+    except Exception as e:
+        logger.error(f"Submission failed: {e}", exc_info=True, extra=log_context)
+
+        raise HTTPException(status_code=500, detail=str(e))
+    
+# --- Response Model ---
+class SubmissionsResponse(BaseModel):
+    status: str
+    markdown_content: str
+
+@app.get("/api/lab/submissions", response_model=SubmissionsResponse)
+def get_lab_submissions(
+    request: Request,
+    student_number: str = Query(...),
+    student_name: str = Query(...),
+    machine_id: str = Query(...),
+):
+    """
+    Retrieves all submissions for the student and generates an amalgamated Markdown review document.
+    """
+    client_ip = request.client.host if request.client else "UNKNOWN"
+    log_context = {'student_number': student_number, 'ip_address': client_ip, 'machine_id': machine_id}
+
     try:
-        database.insert_debug_log(
-            payload.machine_id, payload.student_id, payload.timestamp, 
-            payload.event_type, payload.content
+        # 1. Connect and Validate
+        conn = get_db_connection(
+            student_number, 
+            student_name, 
+            f"session{session_count.get(student_number, '')}"
         )
+        cursor = conn.cursor()
         
-        important_events = ['watch_added', 'hover_evaluated', 'crashed', 'stderr', 'suspicious_paste', 'settings_tampered']
-        if payload.event_type in important_events:
-            print(f"🚨 [디버그/보안 추적] {payload.student_id or '미확인'} ({payload.event_type}): {payload.content[:50]}")
+        cursor.execute("SELECT machine_id FROM session_metadata LIMIT 1")
+        session_meta = cursor.fetchone()
+        
+        if not session_meta:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Session not initialized.")
             
-        return {"status": "success"}
-    except Exception as e:
-        logger.error(f"디버그 로그 DB 저장 에러: {str(e)}")
-        raise HTTPException(status_code=500, detail="DB 저장 실패")
+        if session_meta[0] != machine_id:
+            conn.close()
+            raise HTTPException(status_code=403, detail="Machine ID mismatch.")
+            
+        # 2. Fetch all submissions ordered chronologically
+        cursor.execute("""
+            SELECT submission_type, task_id, timestamp, source_files_snapshot, vscode_config_snapshot
+            FROM submissions
+            ORDER BY timestamp ASC
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # 3. Build the Amalgamated Markdown Document
+        md_lines = [f"# C-Lab Session Review: {student_number} {student_name}"]
+        
+        if not rows:
+            md_lines.append("*No submissions found for this session.*")
+        else:
+            for row in rows:
+                sub_type, task_id, timestamp, source_snap, vscode_snap = row
+                source_files = json.loads(source_snap)
+                vscode_configs = json.loads(vscode_snap)
+                
+                md_lines.append(f"## Task: {task_id} ({sub_type.upper()} Submission)")
+                md_lines.append(f"**Timestamp:** {timestamp}\n")
+                
+                md_lines.append("### Source Files")
+                for filename, content in source_files.items():
+                    md_lines.append(f"**`{filename}`**")
+                    md_lines.append("```c")
+                    md_lines.append(content)
+                    md_lines.append("```\n")
+                
+                if vscode_configs:
+                    md_lines.append("### Workspace Configurations")
+                    for filename, content in vscode_configs.items():
+                        md_lines.append(f"**`{filename}`**")
+                        ext = "json" if filename.endswith(".json") else "text"
+                        md_lines.append(f"```{ext}")
+                        md_lines.append(content)
+                        md_lines.append("```\n")
+                
+                md_lines.append("---\n") # Section divider
+                
+        logger.info("Generated lab review markdown.", extra=log_context)
+        return {
+            "status": "success",
+            "markdown_content": "\n".join(md_lines)
+        }
 
-@app.post("/api/track/debug-log/batch")
-def track_debug_log_batch(payload: List[DebugLogPayload], ips: dict = Depends(verify_ip)):
-    if not payload:
-        return {"status": "success", "message": "Empty batch"}
+    except HTTPException as e:
+        logger.error(f"Failed to generate review: {e}", extra=log_context)
 
-    # Group by student_id to ensure we write to the correct independent DB.
-    student_id = payload[0].student_id 
-    
-    # Transform into tuples
-    batch_data = [
-        (
-            item.machine_id, 
-            item.student_id, 
-            item.timestamp, 
-            item.event_type, 
-            item.content
-        )
-        for item in payload
-    ]
-    
-    try:
-        database.insert_debug_log_batch(student_id, batch_data)
-        print(f"[DebugLog Batch 저장 완료] IP: {ips['client_ip']}, {len(batch_data)}개 레코드 일괄 삽입")
-        return {"status": "success", "inserted": len(batch_data)}
+        # If we manually raised an HTTPException (like a 404), 
+        # let it pass through to the client as-is.
+        raise
+
     except Exception as e:
-        logger.error(f"DebugLog Batch DB 저장 에러: {str(e)}")
-        raise HTTPException(status_code=500, detail="DB 일괄 저장 실패")
+        logger.error(f"Failed to generate review: {e}", extra=log_context)
+        raise HTTPException(status_code=500, detail=str(e))
