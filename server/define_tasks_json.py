@@ -1,241 +1,347 @@
 import json
 import os
 
-lab = 6
+lab = 11
 
 data = {
     "tasks": [
         {
-            "title": "Simple Addition",
-            "description": "return the sum of the two parameters",
+            "title": "Create a Custom Print Function",
+            "description": "encapsulate the string printing logic into a reusable custom function",
             "skeleton_code": """
+#include <stdio.h>
 
-/* add 함수는 매개 변수 두개를 더한 값을 반환한다. 
- *
- * 매개변수:
- *      - int a: 더할 한 숫자
- *      - int b: 더할 다른 숫자
- *
- * 반환값: a와 b를 더한 결과
- */
+/* To-Do: 문자열을 전달받으면, 화면에 출력하는 함수 print를 만들어보세요 */
 
-int add(int a, int b);
-
-/* to_do: 두 숫자를 더하는 add 함수를 만들어보세요 */
 
 int main(void)
 {
-        int result = add(3, 5);
+        print("print function ok.\\n");
         return 0;
 }
 """
         },
         {
-            "title": "Overflow-safe Addition",
-            "description": "return the sum of the two positive-integer parameters only if the result is not overflowed",
+            "title": "",
+            "description": "",
             "skeleton_code": """
+#include <stdio.h>
 
-/* add_positives_overflow_safe 함수는 덧셈을 하기 전에 먼저 오버플로우를 체크한다.
- * 문제가 없다는 것이 확인된 경우에만 매개 변수 두개를 더한 값을 반환한다. 
- *
- * 매개변수:
- *      - int a: 더할 한 양의 숫자
- *      - int b: 더할 다른 양의 숫자
- *      - int int_max: 오버플로우되지 않는 범위 안에서의 최대값
- *
- * 반환값: 
- *      - 문제가 없을 경우      : a + b
- *      - a나 b가 음수일 경우   : -1        : 
- *      - a나 b가 너무 클 경우  : -2
- *      - a + b가 너무 클 경우  : -3
- */
-
-int add_positives_overflow_safe(int a, int b, int int_max);
-
-/* to_do: 두 양수를 안전하게 더하는 add_positives_overflow_safe 함수를 만들어보세요 */
+/* To-Do: 0부터 9까지 범위의 정수를 전달받으면, 화면에 숫자를 출력하는 함수 print_digit을 만들어보세요 */
 
 int main(void)
 {
-        int int_max = 32767;            /* int_max: 16비트 기준 최대값 */
+        print_digit(0);
+        print_digit(9);
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
 
-        int result_neg = positive_add_overflow_safe(0, -1, int_max);
-        int result_big = positive_add_overflow_safe(0, int_max + 1, int_max);   /* int가 int_max + 1도 표현 가능하다고 가정 */
-        int result_overflow = positive_add_overflow_safe(1, int_max, int_max);
+/* To-Do: 0부터 99까지 범위의 정수를 전달받으면, 화면에 각 자리수에 해당하는 숫자 두개를 출력하는 함수 print_two_digit_leading_zero를 만들어보세요. 0을 입력받으면 화면에 00 출력, 10을 입력받으면 화면에 10 출력 */
 
-        int result_normal = positive_add_overflow_safe(1, 1, int_max);
+int main(void)
+{
+        print_two_digit_leading_zero(0);
+        print_two_digit_leading_zero(9);
+        print_two_digit_leading_zero(10);
+        print_two_digit_leading_zero(99);
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
+
+/* To-Do: 0부터 99까지 범위의 정수를 전달받으면, 화면에 정수를 그대로 출력하는 함수 print_two_digit_no_leading_zero를 만들어보세요. 0을 입력받으면 화면에 0 출력, 10을 입력받으면 화면에 10 출력 */
+
+int main(void)
+{
+        print_two_digit_no_leading_zero(0);
+        print_two_digit_no_leading_zero(9);
+        print_two_digit_no_leading_zero(10);
+        print_two_digit_no_leading_zero(99);
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
+
+/* To-Do: 0부터 999까지 범위의 정수를 전달받으면, 화면에 각 자리수에 해당하는 숫자 세개를 출력하는 함수 print_three_digit_leading_zero를 만들어보세요. 0을 입력받으면 화면에 000 출력, 10을 입력받으면 화면에 010 출력, 100을 입력받으면 화면에 100 출력, 999를 입력받으면 화면에 999 출력 */
+
+int main(void)
+{
+        print_three_digit_leading_zero(0);
+        print_three_digit_leading_zero(9);
+        print_three_digit_leading_zero(10);
+        print_three_digit_leading_zero(99);
+        print_three_digit_leading_zero(100);
+        print_three_digit_leading_zero(999);
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
+
+/* To-Do: 0부터 999까지 범위의 정수를 전달받으면, 화면에 정수를 그대로 출력하는 함수 print_three_digit_no_leading_zero를 만들어보세요. 0을 입력받으면 화면에 0 출력, 10을 입력받으면 화면에 10 출력, 100을 입력받으면 화면에 100 출력 */
+
+int main(void)
+{
+        print_three_digit_no_leading_zero(0);
+        print_three_digit_no_leading_zero(9);
+        print_three_digit_no_leading_zero(10);
+        print_three_digit_no_leading_zero(99);
+        print_three_digit_no_leading_zero(100);
+        print_three_digit_no_leading_zero(999);
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
+
+/* To-Do: 1부터 32비트 INT_MAX까지 범위의 정수를 전달받으면, 화면에 각 자리수에 해당하는 숫자 열개를 출력하는 함수 print_ten_digit_leading_zero를 만들어보세요. */
+
+int main(void)
+{
+        print_ten_digit_leading_zero(777);
+        print_ten_digit_leading_zero(20260513);
+        print_ten_digit_leading_zero(INT_MAX);
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
+#include <limits.h>
+
+/* To-Do: 1부터 INT_MAX까지 범위의 정수를 전달받으면, 화면에 정수를 그대로 출력하는 함수 print_positives를 만들어보세요. */
+
+int main(void)
+{
+        print_positives(777);
+        print_positives(20260513);
+        print_positives(INT_MAX);
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
+#include <limits.h>
+
+/* To-Do: INT_MIN부터 -1까지 범위의 정수를 전달받으면, 화면에 정수를 그대로 출력하는 함수 print_negatives를 만들어보세요. */
+
+int main(void)
+{
+        print_negatives(-1);
+        print_negatives(INT_MIN);
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
+#include <limits.h>
+
+/* To-Do: INT_MIN부터 INT_MAX까지 범위의 정수를 전달받으면, 화면에 정수를 그대로 출력하는 함수 print_int를 만들어보세요. */
+
+int main(void)
+{
+        print_int(INT_MAX);
+        print_int(INT_MIN);
+        print_int(0);
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
+#include <limits.h>
+
+/* To-Do: int 배열을 전달받으면, 화면에 배열 내용을 출력하는 함수 print_int_array를 만들어보세요. */
+
+int main(void)
+{
+        int arr1[] = {0};
+        int arr2[] = {1, 2};
+        int arr3[] = {3, 4, 5};
+        print_int_array(arr1);
+        print_int_array(arr2);
+        print_int_array(arr3);        
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
+#include <limits.h>
+
+/* To-Do: 숫자 배열과 목표값을 전달받으면, 합계가 목표값이 되는 두 숫자를 찾는 twoSum 함수를 만들어보세요. */
+/* 반환값: 성공했을 때 0, 실패했을 때 -1 */
+/* nums: 숫자들이 저장된 배열 */
+/* numsSize: nums 배열의 크기 */
+/* target: 두 숫자 합계 목표 */
+/* first_num_index: 합계가 target인 두 숫자 중 첫번째 숫자의 인덱스 */
+/* second_num_index: 합계가 target인 두 숫자 중 두번째 숫자의 인덱스 */
+int twoSum(int *nums, int numsSize, int target, int *first_num_index, int *second_num_index);
+
+int main(void)
+{
+        int nums[5] = {1, 2, 3, 4, 5};
+        int numsSize = 5;
+        int target = 3;
+        int index_found[2] = {-1, -1};
+
+        print_str("nums: ");
+        print_int_array(nums, 5);
+        print_str("\n");
+        
+        print_str("target: ");
+        print_int(target);
+        print_str("\n");
+
+        int result = twoSum(nums, numsSize, target, &index_found[0], &index_found[1]);
+
+        print_str("result: ");
+        if (result == 0) {
+                print_str("success");
+        } else {
+                print_str("fail");
+        }
+        print_str("\n");
+
+        print_str("index found: ");
+        print_int_array(result, 2);
+        print_str("\n");
+        
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
+#include <limits.h>
+
+/* To-Do: 0부터 255까지의 숫자를 전달받으면, 화면에 이진수로 변환해서 비트 여덟개를 출력하는 함수 print_binary를 만들어보세요. */
+
+int main(void)
+{
+        for (int i = 0; i <= 255; i++) {
+                print_int(i);
+                print_str(": ");
+                print_binary(i);
+                print_str("\n);
+        }
+        return 0;
+}
+"""
+        },
+        {
+            "title": "",
+            "description": "",
+            "skeleton_code": """
+#include <stdio.h>
+#include <limits.h>
+
+/* To-Do: 글자 '0'과 '1' 여덟개로 이뤄진 문장을 전달받으면, 이진수를 십진수로 변환해서 반환하는 함수 decode_binary를 만들어보세요. */
+
+int main(void)
+{
+        unsigned char x = decode_bit("00001010");
+        unsigned char y = decode_bit("11010011");
+        
+        print_str("x: ");
+        print_binary(x);
+        print_str("\n");
+
+        print_str("y: ");
+        print_binary(y);
+        print_str("\n");
+
+        print_str("x & y: ");
+        print_binary(x & y);
+        print_str("\n");
+
+        print_str("x | y: ");
+        print_binary(x | y);
+        print_str("\n");
+
+        print_str("x ^ y: ");
+        print_binary(x ^ y);
+        print_str("\n");
+
+        print_str("(x ^ y) ^ y: ");
+        print_binary((x ^ y) ^ y);
+        print_str("\n");
 
         return 0;
 }
 """
         },
         {
-            "title": "Simple Multiplication",
-            "description": "return the multiply of the two parameters",
+            "title": "",
+            "description": "",
             "skeleton_code": """
+#include <stdio.h>
+#include <limits.h>
 
-/* multiply 함수는 매개 변수 두개를 곱한 값을 반환한다. 
- *
- * 매개변수:
- *      - int a: 더할 한 숫자
- *      - int b: 더할 다른 숫자
- *
- * 반환값: a와 b를 곱한 결과
- */
-
-int multiply(int a, int b);
-
-/* to_do: 두 숫자를 곱하는 multiply 함수를 만들어보세요 */
+/* To-Do: encrypted_msg에 저장된 암호를 해독해서 화면에 출력해보세요. */
 
 int main(void)
 {
-        int result = multiply(3, 5);
+        const char encrypted_msg[] = "dzcfs tfdvsjuz";
+        char decrypted_msg[30] = "dzcfs tfdvsjuz";
+
+        print_str(decrypted_msg);
+        print_str("\n");
+        
         return 0;
 }
 """
         },
-        {
-            "title": "Modulo Multiplication",
-            "description": "return the modular multiply of the two integers",
-            "skeleton_code": """
-
-/* multiply_modulo 함수는 곱셈을 하기 전에 먼저 나머지 연산으로 범위를 한정시킨다.
- * 곱셈한 결과에도 나머지 연산으로 범위를 한정시킨 후에 반환한다. 
- *
- * 매개변수:
- *      - int a: 곱할 한 숫자
- *      - int b: 곱할 다른 숫자
- *      - int mod: 나머지 연산을 할 때, 나누는 수. 절대값이 sqrt(int_max) + 1 이하여야 안전하다.
- *
- * 반환값: ((a % mod) * (b % mod)) % mod
- */
-
-int multiply_modulo(int a, int b, int mod);
-
-/* to_do: 곱셈을 할 때 나머지 연산을 써서 범위를 한정시키는 multiply_modulo 함수를 만들어보세요 */
-
-int main(void)
-{
-        int mod = 10;            /* 10으로 나눈 나머지는 언제나 한자리 수 */
-
-        int result_pos_pos = multiply_modulo(555, 555, mod);
-        int result_pos_neg = multiply_modulo(555, -555, mod);
-        int result_neg_neg = multiply_modulo(-555, -555, mod);
-
-        return 0;
-}
-"""
-        },
-        {
-            "title": "Modulo Multiplication by Addition",
-            "description": "return the modular multiply of the two integers, implemented by addition",
-            "skeleton_code": """
-
-/* multiply_modulo_by_addition 함수는 곱셈을 하기 전에 먼저 나머지 연산으로 범위를 한정시킨다.
- * 여러번 덧셈하는 방법으로 곱셈을 구현해서 사용 가능한 mod값의 범위를 넓힌다. 
- * 덧셈을 할 때마다 나머지 연산으로 범위를 한정시킨다. 
- *
- * 매개변수:
- *      - int a: 곱할 한 양의 숫자
- *      - int b: 곱할 다른 양의 숫자
- *      - int mod: 나머지 연산을 할 때, 나누는 수. 절대값이 (int_max / 2) + 1 이하여야 안전하다.
- *
- * 반환값: (0에 (a % mod)를 (b % mod)번 더하기) % mod
- */
-
-int multiply_modulo_by_addition(int a, int b, int mod);
-
-/* to_do: 곱셈을 덧셈으로 구현한 multiply_modulo_by_addition 함수를 만들어보세요 */
-
-int main(void)
-{
-        int mod = 10;            /* 10으로 나눈 나머지는 언제나 한자리 수 */
-
-        int result_pos_pos = multiply_modulo(555, 555, mod);
-        int result_pos_neg = multiply_modulo(555, -555, mod);
-        int result_neg_neg = multiply_modulo(-555, -555, mod);
-
-        return 0;
-}
-"""
-        },
-        {
-            "title": "Power Modulo",
-            "description": "return the power of an integer, to the other integer",
-            "skeleton_code": """
-
-            
-/* multiply_modulo 함수는 곱셈을 하기 전에 먼저 나머지 연산으로 범위를 한정시킨다.
- * 곱셈한 결과에도 나머지 연산으로 범위를 한정시킨 후에 반환한다. 
- *
- * 매개변수:
- *      - int a: 곱할 한 양의 숫자
- *      - int b: 곱할 다른 양의 숫자
- *      - int mod: 나머지 연산을 할 때, 나누는 수. 절대값이 sqrt(int_max) + 1 이하여야 안전하다.
- *
- * 반환값: ((a % mod) * (b % mod)) % mod
- */
-
-int multiply_modulo(int a, int b, int mod);
-
-/* to_do: 곱셈을 할 때 나머지 연산을 써서 범위를 한정시키는 multiply_modulo 함수를 만들어보세요 */
-
-
-/* power_modulo 함수는 먼저 나머지 연산으로 범위를 한정되는 곱셈을 반복해서 거듭제곱을 구한다.
- *
- * 매개변수:
- *      - int a: 거듭제곱에서 밑에 해당하는 양의 숫자
- *      - int b: 거듭제곱에서 지수에 해당하는 양의 숫자
- *      - int mod: 나머지 연산을 할 때, 나누는 수. 절대값이 sqrt(int_max) + 1 이하여야 안전하다.
- *
- * 반환값: (1에 (a % mod)를 b번 곱하기) % mod
- */
-
-int power_modulo(int a, int b, int mod);
-
-/* to_do: 거듭제곱을 곱셈으로 구현한 power_modulo 함수를 만들어보세요 */
-
-int main(void)
-{
-        int mod = 10;            /* 10으로 나눈 나머지는 언제나 한자리 수 */
-
-        int result_3_to_100 = power_modulo(3, 100, mod);
-
-        return 0;
-}
-"""
-        },
-        {
-            "title": "Fibonacci by recursion",
-            "description": "calculate fibonacci number by recursion",
-            "skeleton_code": """
-
-/* fibonacci 함수는 피보나치 숫자를 재귀적으로 계산한다. 
- *
- * 매개변수:
- *      - int n: 몇번째 피보나치 숫자를 구할지
- *
- * 반환값: 
- *      - n이 0이면, 0
- *      - n이 1이면, 1
- *      - n이 2이상 이면, f(n - 1) + f(n - 2)
- */
-
-int fibonacci(int n);
-
-/* to_do: n번째 두 숫자를 더하는 add 함수를 만들어보세요 */
-
-int main(void)
-{
-        int result = fibonacci(10);
-        return 0;
-}
-"""
-        },        
-    ]
+]
 }
 
 # 0. add task id
-for index, task in enumerate(data["tasks"]):
+for index, task in enumerate(data.get("tasks", [])):
     task["task_id"] = f"lab{lab}_part{index}"
     task["title"] = f"Part {index}: " + task["title"]
 
