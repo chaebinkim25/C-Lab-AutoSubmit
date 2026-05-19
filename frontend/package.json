@@ -1,0 +1,84 @@
+{
+  "name": "c-lab-autosubmit",
+  "displayName": "C-Lab AutoSubmit",
+  "description": "Assist with C programming computer lab sessions by logging coding behavior and automating code submissions.",
+  "version": "1.1.1",
+  "enabledApiProposals": [
+    "terminalDataWriteEvent"
+  ],
+  "engines": {
+    "vscode": "^1.110.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "c-lab.startLab",
+        "title": "C-Lab: Start Lab Session"
+      },
+      {
+        "command": "c-lab.midSubmit",
+        "title": "C-Lab: Mid Submission"
+      },
+      {
+        "command": "c-lab.finalSubmit",
+        "title": "C-Lab: Final Submission"
+      },
+      {
+        "command": "c-lab.navigateTask",
+        "title": "C-Lab: Navigate Task"
+      },
+      {
+        "command": "c-lab.nextTask",
+        "title": "C-Lab: Next Task"
+      },
+      {
+        "command": "c-lab.endSession",
+        "title": "C-Lab: End Session"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/diff-match-patch": "^1.0.36",
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.19.15",
+    "@types/node-fetch": "^2.6.13",
+    "@types/sinon": "^21.0.1",
+    "@types/vscode": "^1.110.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.39.3",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.5",
+    "sinon": "^21.0.3",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
+    "webpack": "^5.105.3",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "diff-match-patch": "^1.0.5"
+  }
+}
