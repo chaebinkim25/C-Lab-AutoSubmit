@@ -1,159 +1,207 @@
-# C-Lab AutoSubmit - Development To-Do List
+# C-Lab AutoSubmit System - Implementation Tasks
 
-## Phase 1: Project Setup & Architecture
-- [x] **Initialize Backend Repository**
-  - [x] Set up Python environment.
-  - [x] Install FastAPI, Uvicorn, and SQLite dependencies.
-  - [x] Define the SQLite schema (Write-Ahead Logging mode) for: Sessions, Diff Logs, Paste Violations, Debug Logs, and Submissions.
-- [x] **Initialize VS Code Extension Repository**
-  - [x] Generate extension scaffolding using `yo code` (TypeScript).
-  - [x] Configure `package.json` for extension activation events (`onStartupFinished`) and command registrations (`c-lab.startLab`, `c-lab.midSubmit`, `c-lab.finalSubmit`, `c-lab.cleanup`).
-  - [x] Setup Webpack/esbuild for extension bundling.
+## Phase 1: Infrastructure & Scaffolding
+- [x] **Backend: FastAPI Scaffolding**
+  - [x] Initialize project with FastAPI and Uvicorn.
+  - [x] Set up global timezone configuration to enforce `Asia/Seoul` (KST).
+  - [x] Configure standard Python logger to output `ISO 8601 KST` timestamps.
+- [x] **Backend: Database Architecture**
+  - [x] Implement dynamic SQLite shard routing via machine and session (e.g., `{machine_id}_{session_id}.db`).
+  - [x] Enable Write-Ahead Logging (WAL) mode for concurrency.
+  - [x] Define stateless query protocols (no in-memory globals).
+- [x] **Frontend: VS Code Extension Scaffolding**
+  - [x] Initialize TypeScript extension project (`yo code`).
+  - [x] Configure `webpack` or `esbuild` for bundling.
+  - [x] Install required tracking libraries (e.g., `diff-match-patch`).
 
-## Phase 2: Session Initialization & Time Sync (Workflows A & B)
-- [x] **Backend: Foundation APIs**
-  - [x] Implement `GET /api/check-time` (logic to check against schedule).
-  - [x] Implement `GET /api/lab/tasks` (serve skeleton codes).
-  - [x] Implement `POST /api/session/start` (register session and provision SQLite shard).
-- [x] **Extension: Activation & Environment Checks**
-  - [x] Implement local `machine_id` generation and storage logic.
-  - [x] Create time-sync check against `/api/check-time` on startup.
-  - [x] Implement auto-update check/wait logic.
-  - [x] Validate OS platform and `cpptools` dependency.
-- [x] **Extension: The "Start Lab" Flow**
-  - [x] Build the UI status bar button ("start lab" state).
-  - [x] Implement user prompts (`InputBox`) for Student ID and Name.
-  - [x] Ensure workspace is trusted and the correct folder is open.
-  - [x] Override workspace setting: force `files.autoSave` with a 1-second delay.
-  - [x] Download first skeleton code, write to disk, and send baseline back to server.
+## Phase 2: Session Management & Provisioning
+- [x] **Backend: Core Session API**
+  - [x] Build `GET /api/check-time` (07:00–13:00 KST validation).
+  - [x] Build `GET /api/lab/tasks` (with PRNG `{{RAND_min_max}}` seed injection).
+  - [x] Build `POST /api/session/start` (enforce clean slate).
+  - [x] Build `POST /api/session/end` (handle completed vs. suspended status).
+- [x] **Frontend: Initialization & UI**
+  - [x] Register `c-lab.startLab` command.
+  - [x] Check time against server on activation; remain dormant if outside lab hours.
+  - [x] Validate `ms-vscode.cpptools` dependency presence.
+  - [x] Build localized (Korean) input boxes for Student Number (Regex check) and Name.
+  - [x] Implement strict NFC normalization for Korean strings.
+- [x] **Frontend: Workspace Management**
+  - [x] Generate, securely store, and retrieve `machine_id`.
+  - [x] Enforce routing to `~/C-Lab-Workspace` (create if missing).
+  - [x] Auto-provision WSL folder if on Windows.
+  - [x] Validate "Trusted Workspace" state.
+  - [x] Enforce policies: `files.autoSave` (1s), 8-space tabs, disable AI Copilot.
 
-## Phase 3: The Tracking Engine (Tracks A, B, & C)
-- [x] **Backend: Tracking APIs**
-  - [x] Implement `POST /api/track/diff` to receive code diffs.
-  - [x] Implement `POST /api/track/debug-log` to receive debug telemetry.
-  - [x] Implement endpoint to log paste violations (can be part of diff or a separate endpoint).
-- [x] **Extension: Diff & Paste Tracking (Tracks A & B)**
-  - [x] Implement `vscode.workspace.onDidChangeTextDocument` listener.
-  - [x] Aggregate changes into 1-second interval payloads.
-  - [x] Create background worker to send payloads at randomized 10-20s intervals.
-  - [x] Implement Paste Detection logic (distinguish external pastes from internal/whitespace).
-  - [x] Implement auto-undo for unauthorized pastes and transmit violation log.
-- [x] **Extension: Debug Tracker (Track C)**
-  - [x] Register `DebugAdapterTracker` for the C/C++ debugger.
-  - [x] Intercept snapshot, breakpoints, navigation commands, and variable inspection.
-  - [x] Aggregate and transmit payload upon debug session termination.
+## Phase 3: Telemetry & Security (Tracks A & B)
+- [x] **Frontend: Track A (Diff Tracker)**
+  - [x] Hook `vscode.workspace.onDidChangeTextDocument`.
+  - [x] Implement `diff-match-patch` to extract true deltas (not full text).
+  - [x] Batch modifications into 1-second interval chunks.
+  - [x] Build asynchronous worker queue to push `/api/track/diff` payloads every 10-20s.
+- [x] **Frontend: Track B (Security & File Watcher)**
+  - [x] Implement Paste Detection: Compare paste events against local `diffBuffer` and `recentlyDeletedBuffer`.
+  - [x] If unauthorized: Execute native VS Code `undo`, show Korean warning.
+  - [x] Extract surrounding context (3-5 lines) and exact line number for violation logs.
+  - [x] Hook `vscode.window.onDidChangeWindowState` to detect window focus loss.
+  - [x] detect editor active window change
+  - [x] Implement File Watcher for external creations/deletions.
+  - [x] **Crucial:** Add logic to File Watcher to completely ignore VS Code's native auto-save events to prevent false positives. Ensure file extensions are preserved in logs.
+- [x] **Backend: Telemetry Endpoints**
+  - [x] Build `POST /api/track/diff`.
+  - [x] Build `POST /api/track/security-violation`.
 
-## Phase 4: Submissions & Teardown (Tracks D, E, & F)
+## Phase 4: Debug Interception (Track C)
+- [x] **Frontend: DAP Tracker**
+  - [x] Register `DebugAdapterTrackerFactory` for `cppdbg` / `cppvsdbg`.
+  - [x] Capture initial `active_file` name (with extension) and full source snapshot on launch.
+  - [x] Parse and store `setBreakpoints` line numbers.
+  - [x] Intercept execution navigation (step-over, continue).
+  - [x] Intercept evaluation sequences and output streams.
+  - [x] On termination, call `vscode.languages.getDiagnostics()` to capture compilation/runtime problems.
+  - [x] Fire aggregated payload to `/api/track/debug-log`.
+- [x] **Backend: Debug API**
+  - [x] Build `POST /api/track/debug-log`.
+
+## Phase 5: Submission & Review (Tracks D & E)
+- [x] **Frontend: Submissions**
+  - [x] Register `c-lab.midSubmit` command. **Retain editors, package source/`.vscode` files, fetch and provision the next task's skeleton code.**
+  - [x] Register `c-lab.finalSubmit` command. Add Korean confirmation prompt.
+  - [x] Add Status Bar button: `[Submit Task]`.
+- [x] **Frontend: Review Phase (Infinite Loop Fix)**
+  - [x] Register custom `vscode.workspace.registerTextDocumentContentProvider` (`clab-review://`).
+  - [x] Fetch Markdown from server, open via native markdown preview.
 - [x] **Backend: Submission APIs**
-  - [x] Implement `POST /api/session/submit` (handle mid/final code + `.vscode` configs).
-  - [x] Implement `GET /api/lab/submissions` (generate and return amalgamated markdown).
-- [x] **Extension: Mid-Submission (Track D)**
-  - [x] Bind "mid submission" button logic.
-  - [x] Send current source files and `.vscode` configs to backend.
-  - [x] Clear editor, download next skeleton, and establish new baseline.
-- [x] **Extension: Final Submission & Review (Track E)**
-  - [x] Bind `c-lab.finalSubmit` to button and Command Palette.
-  - [x] Send final payload to backend.
-  - [x] **Security Wipe:** Overwrite active source files with `""`, then delete local files.
-  - [x] Close all active editors.
-  - [x] Fetch amalgamated markdown from `/api/lab/submissions` and display in read-only tab.
-  - [x] Update UI button to "end session".
-- [x] **Extension: Cleanup (Track F)**
-  - [x] Bind "end session" button logic.
-  - [x] Delete the read-only markdown file.
-  - [x] Close all editors and the workspace folder.
-  - [x] Hide extension UI.
+  - [x] Build `POST /api/session/submit` (mid & final).
 
-## Phase 5: Testing & Quality Assurance
-- [x] **Unit Testing: Backend Endpoints (`main.py`)**
-  - [x] `track_diff`: Verify DB shard routing and `machine_id` rejection logic.
-  - [x] `track_debug_log`: Verify complex JSON payload serialization for SQLite.
-  - [x] `track_paste_violation`: Ensure separate table insertion works securely.
-  - [x] `submit_session`: Test both 'mid' and 'final' state insertions.
-  - [x] `get_lab_submissions`: Validate the Markdown generation loop and formatting.
-- [x] **Unit Testing: Extension Network Utils (`src/utils/api.ts`)**
-  - [x] `checkLabTime`, `fetchLabTasks`, `fetchLabSubmissions`: Test GET logic and query params.
-  - [x] `startSession`, `sendBaseline`, `sendDiff`: Test POST payload formatting.
-  - [x] `logPasteViolation`, `sendDebugTelemetry`, `sendSubmission`: Test error handling and response parsing.
-- [x] **Unit Testing: Extension Core Utils (`src/utils/`)**
-  - [x] `auth.ts -> promptForCredentials`: Test regex validation (empty strings, non-digits for student ID) and cancellation.
-  - [x] `environment.ts -> getOSPlatform`, `validateCppTools`: Mock VS Code extension registry to test missing dependency prompts.
-  - [x] `machineId.ts -> getMachineId`: Test UUID generation and retrieval from `globalState`.
-  - [x] `update.ts -> enforceVersionCheck`: Test UI blocking and status bar generation on version mismatch.
-  - [x] `workspace.ts`: Test `verifyWorkspace`, `enforceAutoSave` (settings override), `writeAndOpenSkeleton`, `captureWorkspaceSnapshot` (file crawling), and `wipeAndDeleteFile` (buffer overwriting).
-- [x] **Unit Testing: The Tracking Engine (`src/tracking/`)**
-  - [x] `diffTracker.ts -> registerDiffTracker`: Mock keystrokes to test the 1-second interval aggregation and the anti-cheat Paste Heuristic (pure whitespace vs. external snippets).
-  - [x] `diffTracker.ts -> processQueueWorker`: Simulate network failures to test the queue re-insertion (retry) logic.
-  - [x] `debugTracker.ts -> registerDebugTracker`: Mock DAP messages to ensure `evaluate` requests map correctly to their asynchronous responses.
-- [x] **Integration & E2E Testing**
-  - [x] Simulate a full student workflow: Start Lab -> Type Code -> Copy/Paste Violation -> Mid Submit -> Debug Error -> Final Submit -> End Session.
-  - [x] Verify the extension cleanly detaches and restores VS Code to its default state after `c-lab.cleanup`.
-  - [x] Test end-to-end flow from `/api/session/start` to `/api/session/submit`.
-  - [x] Verify SQLite shard creation and data integrity on the backend.
-  - [x] Validate Debug Adapter Protocol (DAP) interception with different C compilers (GCC/Clang).
-- [x] **Security & Policy Validation**
-  - [x] Confirm `machine_id` mismatch triggers 403 Forbidden responses.
-  - [x] Verify 1-second `autoSave` override cannot be disabled during an active session.
-  - [x] Ensure the "Secure Wipe" accurately clears the file before deletion.
-  - [x] Test the background worker's retry logic during simulated network outages.
+## Phase 6: Teardown & Diagnostics (Tracks F & G)
+- [x] **Frontend: Zero-Trust Teardown**
+  - [x] Hook extension `deactivate()` lifecycle.
+  - [x] Detect if deactivation is unexpected (Suspend path) vs. expected (Cleanup path).
+  - [x] Execute file destruction: Overwrite local `.c` files AND the `.clab_cache` directory with `0x00` bytes, then permanently delete.
+  - [x] (Windows only) Execute background `wsl.exe -t` termination if closing session.
+- [x] **Frontend: Task Navigation Logic**
+  - [x] Update `Start Lab` to automatically provision the first task upon initialization.
+  - [x] Add a Task Navigation UI button that opens a menu to navigate to all other tasks.
+  - [x] Add a `Next Task` UI button for sequential progression.
+  - [x] Implement logic to morph the `Next Task` button into `Final Submission` when on the last task.
+- [x] **Diagnostics & Polish**
+  - [x] Implement global error boundary to catch unhandled exceptions.
+  - [x] Format and send logs to `POST /api/track/extension-log`.
+  - [x] Build backend `POST /api/track/extension-log`.
+  - [x] Do a final sweep of all UI prompts, status bars, and errors to ensure 100% Korean text.
 
-## Phase 6: System Enhancement & Optimization
+## Phase 7: Refactoring
+- [x] Task Navigation Logic: Discard all resume logic. On initialization, always show the first task. Provide a UI button that opens a menu to navigate to all tasks.
+- [x] db file shard: name by machine id and session
+- [x] Task Caching: Implement a secret `.clab_cache` folder. Save `main.c` to cache on navigation. Restore from cache if navigating back to an attempted task.
+- [x] Submit Payloads: Update `c-lab.midSubmit` to execute silently and ONLY send `main.c`. Update `c-lab.finalSubmit` to bundle `main.c` + all files in `.clab_cache`.
+- [x] Watchdog Bypass: Removed (monitor `.clab_cache` as well, only ignore autosave).
+- [x] sanitize trailing whitespaces
+- [x] remove cleanup button
+- [x] Refactor base url in network calls into dedicated single source to easily and safely modify base url.
+- [x] check Review Phase in frontend
+- [x] final submission, build review file from all source files and logs, submit that file only and show as a review phase
+- [x] review functionality does not get data from backend, but construct it itself from the beginning. 
+- [x] Check DRY principle in source codes
+- [x] log all network problems
+- [x] diff delta does not process utf-8 very well
+- [x] discriminate system activity from user activity in diff
+- [x] save starting code to database
+- [x] add session end ui button to deactivate
+- [x] remove obsolete functionalities
+- [x] find and remove all legacy artifacts from previous archtecture
+- [x] all texts shown by ux/ui gathered
+- [x] move out generateLocalReview from submitTask.ts
+- [x] check ui button logic (Refactored to 3-button state machine funnel)
+- [x] reject multiple submission in short duration (Implemented boolean lock + 3s cooldown)
+- [x] send all vscode log to backend (Teardown & Wipe logs now fully captured and flushed)
+- [x] close editor window when deactivate. everytime start, vscode complains no code review md file
+- [x] in backend, after session ended, generate markdown that shows all contents of the db file.
+- [x] deactivate extension after session ends
+- [x] minimize network packets (gzip final submissions)
+- [x] use elapsed second instead of timestamp
+- [x] use elapsed second instead of timestamp also in telemetry of logs
+- [x] use codes in debug telemetry also. 
+- [x] network packet for log messages contains log code instead of sentences
+- [x] migrate `core/database.py` to use `aiosqlite` to allow non-blocking `await` calls.
+- [x] remove id column from session in database
 
-### **Architecture & Lifecycle Refactoring**
-- [x] Refactor extension startup sequence to combine lab schedule and version validation into a single API request.
-- [x] Implement an explicit state machine (`SessionStatus`) to enforce a linear session lifecycle and prevent out-of-order command execution.
-- [x] Eliminate "Zombie Tracker" memory leaks by enforcing explicit `vscode.Disposable` lifecycle management for all background tasks.
-- [x] Restructure extension activation lifecycle to guarantee all commands are registered prior to asynchronous state evaluations and early returns.
-- [x] Purge legacy `globalState` variables (`c_lab_class_schedule`, `c_lab_auto_start_pending`) on activation to prevent cache pollution.
-- [x] Abstract physical environment destruction logic into `cleanupWorkspace()` to maintain strict single-responsibility architecture.
-- [x] Implement strict MVC (Model-View-Controller) architecture by decoupling all VS Code UI presentation logic (Information, Warnings, Errors, Status Bar) into a dedicated `ui.ts` view controller.
-- [x] Implement a lifecycle deactivation guard (`isIntentionalWorkspaceReload`) to prevent global state corruption during intentional WSL workspace transitions.
+- [x] check frontend payload matches backend pydantic schema
+- [x] check extension start time when start lab
+- [x] minimize disc writing and waiting time
+- [x] check sql commands following use scenario
+- [x] forbid start when already lab started
 
-### **Environment & Workspace Engineering**
-- [x] Implement a "One-Shot" workspace reload architecture using global state to seamlessly transition students into a secure, sandboxed lab folder.
-- [x] Extract OS-specific workspace initialization and WSL bridging logic into `workspace.ts` for better separation of concerns.
-- [x] Implement dynamic WSL bridging on Windows to seamlessly transfer the workspace session into a native Linux environment via Remote URIs.
-- [x] Implement a delayed background shell process ("time bomb") during session cleanup to forcefully terminate the WSL VM without crashing the VS Code client UI.
-- [x] Enforce strict execution context via `extensionKind: ['workspace']` to force the Extension Host into the remote Linux environment, resolving cross-boundary dependency resolution failures.
-- [x] Mitigate the WSL "Split Brain" registry cache limitation by replacing background extension polling with a deterministic, interactive UI installation sequence.
+- [x] no gzip
+- [x] move all messages to separate file
+- [x] log stdin and stdout
 
-### **Security & Anti-Cheat Validation**
-- [x] Enforce "Fail-Closed" security posture on startup if the backend server is unreachable.
-- [x] Enforce strict RegEx UI validation (`YYYY-NNNNN`) for student credentials to prevent backend database pollution.
-- [x] Centralize workspace-scoped policy enforcement (disabling AI/Copilot, locking auto-save, standardizing 8-space indentation) protected by a real-time configuration watchdog.
-- [x] Modularize tracker architecture by extracting the configuration watchdog into a dedicated `policyTracker.ts` service.
-- [x] Refine anti-cheat paste detection to allow legitimate cross-file code transfers within the workspace by validating clipboard data against all tracked session buffers.
-- [x] Implement OS-level File System Watcher (`fileTracker.ts`) to audit external file additions, deletions, and modifications to the secure workspace.
+## Phase 8: fix errors
 
-### **Backend Observability & Telemetry**
-- [x] Consolidate unauthorized paste tracking and policy tampering telemetry into a unified `/api/track/security-violation` endpoint for centralized audit logging.
-- [x] Configure production-grade `RotatingFileHandler` logging with custom `logging.Filter` to explicitly extract and track `ip_address`, `machine_id`, and `student_number` globally across all endpoints.
-
-## Phase 7: Verification of System Hardening (Phase 6 Features)
-- [x] **Unit Testing: Formatting & Utilities**
-  - [x] Test UI `promptForCredentials` strictly rejects invalid formats (e.g., `202A-12345`, `2026 12345`) and accepts `YYYY-NNNNN`.
-  - [x] Test `/api/lab/tasks` ensures deterministic `{{RAND_min_max}}` seed generation (consistency per student, uniqueness across students, bounded ranges).
-  - [x] Test `/api/track/security-violation` handles both file-specific strings and global `null` filenames without throwing DB schema errors.
-- [x] **Integration Testing: Anti-Cheat Engine**
-  - [x] Verify Workspace-Wide Paste Detection accurately allows internal code movement between tabs while blocking and reverting external OS clipboard pastes.
-  - [x] Verify Policy Watchdog successfully catches and instantly reverts mid-session attempts to toggle `autoSave`, `tabSize`, or AI code completion.
-  - [x] Verify OS-Level File Watcher securely detects external drag-and-drops, notepad edits, and file deletions within the active workspace.
-- [ ] **E2E Testing: Environment & Lifecycle**
-  - [ ] Verify "One-Shot" reload logic successfully establishes `vscode-remote://wsl+...` context on Windows and native folder routing on macOS/Linux.
-  - [ ] Verify `c_lab_startup_phase` global state logic correctly intercepts the extension activation post-reload, bypassing the start button and resuming initialization.
-  - [ ] Verify `cleanupWorkspace()` gracefully initiates the "time bomb" shell command to stop the WSL distro without throwing a "Connection Lost" VS Code error.
-  - [ ] Inspect `c_lab_api.log` after an E2E flow to confirm `ip_address`, `machine_id`, and `student_number` are properly formatted in every log entry.
+- [x] "Hot Exit" Ghost Buffers and File System Watcher Race Conditions
+- [x] http error is not logged in frontend
+- [x] session id is always 1 why keep counting
+- [x] clear vscode output after final submission
 
 ## Phase 8: Polish & Deployment
-- [ ] **Security & Optimization**
+- [x] log in-memory ingestion queue 
+- [x] check server health
+- [x] monitor server cpu, memory, disk, network usage
+- [x] background database backup
+- [x] let backup rely on AWS EBS volume snapshots
+- [x] jwt secret management
+- [x] check if .clab_cache could gets corrupted
+- [x] test if fetch implementation works properly respects the http.proxy settings
+- [x] test extension in the network problem setup
+- [x] increase retry time to 100 times
+
+- [x] **Authentication & Identity**
+  - [x] Refactor Auth: Implement stateless Session Tokens (JWT) to completely remove `student_number` from client-side network traffic (Zero-Trust architecture).
+  - [x] Secure Storage: Store the JWT securely in the VS Code extension's globalState rather than plaintext variables.
+- [x] **Backend: Implement JWT Expiration (`core/auth.py`)**
+  - [x] Update `create_access_token` to include an `exp` (expiration) claim to prevent indefinite token reuse.
+  - [x] Calculate the expiration target using the centralized timezone function (e.g., `get_kst_now() + timedelta(hours=12)`).
+  - [x] Ensure `jwt.decode` in the authorization dependency properly catches and handles `jwt.ExpiredSignatureError`.
+- [x] **Backend: Resolve FastAPI Event Loop Blocking**
+  - [x] migrate `core/database.py` to use `aiosqlite` to allow non-blocking `await` calls.
+  - [x] increase the telemetry jitter window to 60 seconds
+  - [x] in-memory ingestion queue in background tasks. 
+  - [x] configure backend server to store sahrds directory in a RAM disk
+- [x] **Frontend: Resolve Hardcoded HTTP Module (`client.ts`, `submitTask.ts`, `telemetryWorker.ts`)**
+  - [x] Refactor network calls to remove strict reliance on the Node `http` module.
+  - [x] Migrate requests to use native `fetch` API (fully supported in Node 18+ / modern VS Code environments) OR implement dynamic switching between `http`/`https` modules based on the URL scheme.
+  - [x] Ensure the extension gracefully handles TLS/HTTPS connections when communicating with the deployed backend.
+- [x] **Frontend: Prevent Telemetry Data Loss (`trackers/telemetryWorker.ts`)**
+  - [x] Intercept network failures in the `req.on('error')` block to ensure payload data is not permanently dropped.
+  - [x] Implement V2 retry queue: `unshift` failed diff payloads back into `diffTracker.patchQueue` so they successfully aggregate into the next active jitter window once the network restores.
+- [x] **Frontend: Expand NFC Normalization (`commands/startLab.ts`)**
+  - [x] Apply `.normalize('NFC')` to the `studentNumber` input as well as the student name.
+  - [x] Prevent edge-case database routing or validation errors caused by strangely encoded strings (e.g., pasted from a PDF).
+- [x] **Anti-Cheat & Privacy Enforcement**
+  - [x] Macro/Script Evasion Detection: Update `diffTracker.ts` to calculate insertion velocity. Flag insertions that exceed human typing speeds (e.g., 100+ characters in < 0.5s) to catch macro-based pasting.
+  - [x] PII Sanitization: Add a middleware function in the telemetry worker to scrub absolute OS paths (e.g., C:\Users\Name\... or /Users/Name/...) from debugTracker and console output payloads before they leave the student's machine.
+- [x] **Network Resilience (Availability)**
+  - [x] Mitigate Thundering Herd: reduce backend memory pressure.
+  - [x] Asynchronous Fallback: Add a local retry queue with exponential backoff for final submissions. If the server returns a 503 or 429 due to a spike at the end of the lab period, the extension should hold the payload and try again rather than failing out.
+- [ ] **Infrastructure & Environment Deployment**
+  - [ ] Backend Containerization: Containerize the FastAPI backend, ensuring Uvicorn is tuned with appropriate worker threads to handle simultaneous SQLite WAL access.
+  - [ ] Transport Layer Security: Deploy to the cloud provider behind a reverse proxy (like Nginx or Traefik) and enforce strict SSL/TLS (HTTPS) to prevent on-campus packet sniffing.
   - [ ] Review all API endpoints for injection vulnerabilities.
   - [ ] Ensure all extension-to-server traffic includes the `machine_id`.
   - [ ] Test the "No-Internet" failure states (e.g., local caching if diffs fail to send).
-- [ ] **Backend Deployment**
-  - [ ] Containerize FastAPI with Docker.
-  - [ ] Deploy to cloud provider.
-  - [ ] Set up SSL/HTTPS to prevent packet sniffing/hijacking.
 - [ ] **Extension Publishing**
   - [ ] Finalize extension logo and `README.md`.
   - [ ] Package extension via `vsce package`.
   - [ ] Publish to VS Code Marketplace (`vsce publish`).
+
+## Phase 9: Fix error report
+- [x] frontend: sort tasks in the generated review
+- [x] frontend: not use main.c in the generated review
+- [x] frontend: not use uri to save
+- [x] frontend: for macOS user, add lldb to tracker factory list
+- [x] frontend: wrap telemetry path extraction in a normalizer
+- [x] frontend: make mid submission move to next task
+
+## Phase 10: Network resilience update
+- [ ] remove all get operation from backend. store all task info in frontend.
