@@ -29,8 +29,6 @@ def setup_environment():
 JWT_SECRET={jwt_secret}
 
 # AWS EBS Backup Configuration
-AWS_VOLUME_ID=vol-021a02c89a3cfdfc4
-AWS_REGION=ap-northeast-2
 
 """
     
