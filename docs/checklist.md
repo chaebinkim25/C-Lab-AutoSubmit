@@ -1,0 +1,37 @@
+# C-Lab AutoSubmit System - Checklist
+
+- [ ] when activate, if it is not lab time, do not show anything
+- [ ] when start lab, if windows, activate and connect to wsl
+- [ ] when start lab, auto-update the extension
+- [ ] when start lab, open dedicated folder
+- [ ] when start lab, remove all files and hidden cache folders in the workspace (enforce clean slate)
+- [ ] when start lab, expire/invalidate any previous tokens and sessions for this machine
+- [ ] when start lab, generate new session_id and provision NEW database shard named by `{machine_id}_{session_id}.db`
+- [ ] when start lab, issue stateless JWT bound to the new session_id
+- [ ] when start lab, initialize a secret folder (e.g., `.clab_cache`) to store attempted tasks
+- [ ] when start lab, always show the first task automatically in `main.c`
+- [ ] when start lab, reveal a task navigation UI button
+- [x] when start lab, reveal a 'Next Task' UI button
+- [x] when task navigation UI button is clicked, show a menu to navigate to all tasks
+- [x] when 'Next Task' button is clicked, save current `main.c` to cache and load the next sequential task
+- [x] when reaching the final task, change the 'Next Task' button to 'Final Submission'
+- [x] when task navigating, save current `main.c` to the secret folder before switching
+- [x] when task navigating, if target task exists in secret folder, restore it to `main.c` instead of downloading fresh skeleton
+- [x] when mid submission, SILENTLY (no prompt) submit ONLY the current `main.c` file
+- [x] when final submission, prompt user, then submit current `main.c` PLUS all files in the secret folder
+- [x] in final submission, exclude current task's cache file to prevent duplicate logging
+- [x] backend gracefully extracts correct task_name from cached filenames instead of overriding all with current task
+- [x] when final submission, halt all local telemetry trackers (Security, Diff, Debug) to prevent false positives during the review phase
+- [x] when deactivate, turn off wsl
+- [x] when deactivate, close folder
+- [ ] when deactivate, delete all files AND the secret cache folder (token immediately expires)
+- [ ] in network requests, enforce zero-trust by extracting IDs from JWT Bearer token
+- [ ] in diff logger, log only true diff
+- [x] in paste detection, allow paste from same workspace
+- [x] in paste detection, allow auto-complete such as when press `{` and enter key.
+- [x] in paste detection, do not un-do, just record
+- [x] in debugging logger, check macOS works properly
+- [x] in security logger, monitor all file changes in the workspace (autosave only)
+- [ ] check network bottleneck
+- [x] check pii privacy risk
+- [ ] check spoofing
