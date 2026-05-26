@@ -1,4 +1,4 @@
-// /src/utils/messages.ts
+// src/utils/messages.ts
 
 export const MESSAGES = {
     ERRORS: {
@@ -60,7 +60,7 @@ export const MESSAGES = {
         NAME_PLACEHOLDER: "홍길동",
         CONFIRM_MID_SUBMIT: "현재 과제를 제출하고 다음 과제로 넘어가시겠습니까? (제출 후에는 수정할 수 없습니다)",
         CONFIRM_FINAL_SUBMIT: "모든 실습 과제를 최종 제출하시겠습니까? (제출 후에는 실습이 종료되며 더 이상 수정할 수 없습니다)",
-        CONFIRM_END_SESSION: "실습을 강제 종료하시겠습니까? 로컬 폴더가 모두 삭제되며 세션이 만료됩니다.",
+        CONFIRM_END_SESSION: "실습을 종료하시겠습니까? 로컬 폴더가 모두 삭제되며 세션이 만료됩니다.",
         YES_SUBMIT: "예 (제출)",
         YES_FINAL_SUBMIT: "예 (최종 제출)",
         YES_END: "예 (종료)",        
@@ -92,8 +92,6 @@ export const MESSAGES = {
         OPEN_TRUST_SETTINGS: "신뢰 설정 열기",
     },
     LOGS: {
-        API_REJECTED: "Server rejected activation: Not within scheduled KST lab hours.",
-        API_PARSE_FAILED: "Failed to parse server time payload.",
         API_NETWORK_ERROR: (err: string) => `Network Error: Cannot reach API server (${err}).`,
 
         REVIEW_OPENED: "Native markdown preview opened successfully.",
@@ -116,10 +114,8 @@ export const MESSAGES = {
         TASK_RESTORE: (id: string) => `Restored ${id} from cache.`,
         TASK_PROVISION: (id: string) => `Provisioned fresh skeleton for ${id}.`,        
 
-        EXT_DORMANT: "Extension entering DORMANT state.",
         EXT_ACTIVATED: "C-Lab AutoSubmit activated.",
         EXT_NO_CPP: "Extension halting: Missing required C/C++ dependency.",
-        EXT_UI_READY: "Time validation passed. Revealing UI elements.",
         EXT_FATAL_UNCAUGHT: (err: string) => `FATAL (Uncaught Exception): ${err}`,
         EXT_FATAL_UNHANDLED: (err: string) => `FATAL (Unhandled Rejection): ${err}`,
         EXT_TEARDOWN_INIT: "C-Lab Extension: Initiating Zero-Trust Teardown...",
