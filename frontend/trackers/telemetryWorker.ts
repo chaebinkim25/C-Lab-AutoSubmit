@@ -4,10 +4,10 @@ import * as vscode from 'vscode';
 import { DiffTracker } from './diffTracker';
 import { SecurityTracker } from './securityTracker';
 import { DebugTrackerManager } from './debugTracker';
-import { TerminalTracker } from './terminalTracker';
 import { telemetryLogQueue, logEvent } from '../extension';
 import { CONFIG } from '../utils/config';
-import { getToken } from '../utils/token';
+import { getSessionId } from '../utils/token';
+import { getMachineId } from '../utils/machineID';
 
 export class TelemetryWorker {
     private context: vscode.ExtensionContext;
@@ -19,22 +19,24 @@ export class TelemetryWorker {
     private diffTracker: DiffTracker;
     private securityTracker?: SecurityTracker;
     private debugTracker: DebugTrackerManager;
-    private terminalTracker?: TerminalTracker;
+    private pendingSubmissions: any[] = [];
 
     constructor(
         context: vscode.ExtensionContext,
         diffTracker: DiffTracker,
         securityTracker: SecurityTracker | undefined,
-        debugTracker: DebugTrackerManager,
-        terminalTracker?: TerminalTracker
+        debugTracker: DebugTrackerManager
     ) {
         this.context = context;
         this.diffTracker = diffTracker;
         this.securityTracker = securityTracker;
         this.debugTracker = debugTracker;
-        this.terminalTracker = terminalTracker;
     }
 
+    public queueSubmission(payload: any) {
+        this.pendingSubmissions.push(payload);
+    }
+    
     public start(context: vscode.ExtensionContext) {
         this.isRunning = true;
         this.scheduleNextRun();
@@ -70,32 +72,28 @@ export class TelemetryWorker {
         const security_events = this.securityTracker ? this.securityTracker.getPendingSecurityEvents() : [];
         const debug_events = this.debugTracker ? this.debugTracker.getPendingEvents() : [];
 
-        const terminal_events = this.terminalTracker ? this.terminalTracker.getPendingEvents() : [];
+        const sessionId = getSessionId(this.context);
+        const machineId = getMachineId(this.context);
+        if (!sessionId || !machineId) {return false;}        
+
+        const submissions = [...this.pendingSubmissions];
+        this.pendingSubmissions.length = 0;
 
         // Safely extract and clear the volatile worker queue
         const pendingLogs = [...telemetryLogQueue];
         telemetryLogQueue.length = 0;
 
-        // Map log entries into structured objects for transport
-        const extension_logs = pendingLogs.map(e => ({
-            elapsed_seconds: e.elapsed_seconds,
-            log_code: e.code,
-            args: e.args.join('|')
-        }));        
-
-        if (patches.length === 0 && security_events.length === 0 && debug_events.length === 0 && extension_logs.length === 0 && terminal_events.length === 0) {
+        if (patches.length === 0 && security_events.length === 0 && debug_events.length === 0 && pendingLogs.length === 0 && submissions.length === 0) {
             return;
         }
 
-        const token = getToken(this.context);
-        if (!token) {return;}
 
         const payloadObj = {
             patches,
             security_events,
             debug_events,
-            extension_logs,
-            terminal_events 
+            pendingLogs,
+            submissions 
         };
         
         const payload = this.sanitizePII(JSON.stringify(payloadObj));
@@ -104,12 +102,14 @@ export class TelemetryWorker {
             const res = await fetch(`${CONFIG.BASE_URL}/api/track/bulk`, {
             method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${token}`,
+                    'x-machine-id': machineId,
+                    'x-session-id': sessionId,
                     'Content-Type': 'application/json'
                 },
                 body: payload
             });
-            if (!res.ok) {throw new Error(`HTTP ${res.status}`);}
+            if (!res.ok) {throw new Error(`HTTP ${res.status} - ${res.statusText}`);}
+            return true;
         } catch (e: any) {
             logEvent('TEL_ERR_BULK', e.message);
             
@@ -117,8 +117,9 @@ export class TelemetryWorker {
             if (patches.length > 0) { this.diffTracker.requeuePatches(patches); }
             if (security_events.length > 0 && this.securityTracker) { this.securityTracker.requeueEvents(security_events); }
             if (debug_events.length > 0 && this.debugTracker) { this.debugTracker.requeueEvents(debug_events); }
-            if (terminal_events.length > 0 && this.terminalTracker) { this.terminalTracker.requeueEvents(terminal_events); }
             if (pendingLogs.length > 0) { telemetryLogQueue.unshift(...pendingLogs); }
+            if (submissions.length > 0) { this.pendingSubmissions.unshift(...submissions); }
+            return false;
         }
     }
 
@@ -131,9 +132,10 @@ export class TelemetryWorker {
     }
 
     // Emergency Flush for Unexpected Shutdowns
-    public async emergencyFlush(): Promise<void> {
+    public async emergencyFlush(): Promise<boolean> {
         logEvent('TEL_FLUSH');
-        await this.dispatchBulk();
-        return new Promise(resolve => setTimeout(resolve, 500));
+        const success = await this.dispatchBulk();
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return success ?? true;
     }
 }
