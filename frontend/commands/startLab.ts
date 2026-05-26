@@ -1,6 +1,7 @@
 // src/commands/startLab.ts
 
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import { getMachineId } from '../utils/machineID';
 import { ensureSecureWorkspace, validateWorkspaceTrust } from '../utils/workspace';
 import { enforceLabPolicies, startPolicyWatchdog } from '../utils/policies';
@@ -9,13 +10,13 @@ import { TelemetryWorker } from '../trackers/telemetryWorker';
 import { performTaskSwitch } from './taskHelpers';
 import { SecurityTracker } from '../trackers/securityTracker';
 import { DebugTrackerManager } from '../trackers/debugTracker';
-import { TerminalTracker } from '../trackers/terminalTracker';
 import { promptStudentLogin, promptStudentName, showSuccess, showError, updateStatusBar } from '../ui';
 import { cleanupWorkspaceOnStartup } from '../utils/secureWipe';
 import { MESSAGES } from '../utils/messages';
 import { getKSTISO8601 } from '../utils/time';
 import { CONFIG } from '../utils/config';
-import { setToken } from '../utils/token';
+import { setSessionId } from '../utils/token';
+import { getSeededTasks } from '../data/tasks';
 import { logEvent, clearLogs, clearExtensionOutput, resetExtensionStartTime } from '../extension';
 
 // Instantiate the tracker globally so we can access its patch queue later
@@ -23,7 +24,6 @@ export let globalDiffTracker: DiffTracker | null = null;
 export let globalTelemetryWorker: TelemetryWorker | null = null;
 export let globalSecurityTracker: SecurityTracker | null = null;
 export let globalDebugTracker: DebugTrackerManager | null = null;
-export let globalTerminalTracker: TerminalTracker | null = null;
 
 let isStarting = false;
 export let isLabRunning = false;
@@ -112,26 +112,22 @@ export async function startLabCommand(context: vscode.ExtensionContext) {
     }, async (progress) => {
         try {
             // 1. Authenticate with backend
-
-            const response = await authenticateWithServer(studentNumber, studentName, machineId);
+            const sessionId = crypto.randomUUID();
+            await authenticateWithServer(studentNumber, studentName, machineId, sessionId);
 
             // 2. Save credentials to secure storage
-            await setToken(context, response.token);
+            await setSessionId(context, sessionId);
             context.workspaceState.update('studentNumber', studentNumber);
             context.workspaceState.update('machineId', machineId);
 
             // 3. Initializing new task list
-            const tasksResponse = await fetch(`${CONFIG.BASE_URL}/api/lab/tasks`, {
-                headers: { 'Authorization': `Bearer ${response.token}` }
-            });
-            const tasks = await tasksResponse.json() as any[];
+            const tasks = getSeededTasks(studentNumber, studentName);
             await context.workspaceState.update('labTasks', tasks);
 
             // 4. Start Trackers
             if (!globalDiffTracker) { globalDiffTracker = new DiffTracker(); globalDiffTracker.start(context); }
             if (!globalSecurityTracker) { globalSecurityTracker = new SecurityTracker(); globalSecurityTracker.start(context); }
             if (!globalDebugTracker) { globalDebugTracker = new DebugTrackerManager(); globalDebugTracker.start(context); }
-            if (!globalTerminalTracker) { globalTerminalTracker = new TerminalTracker(); globalTerminalTracker.start(context); }
  
             const workspaceFolders = vscode.workspace.workspaceFolders;
             if (workspaceFolders) {
@@ -147,7 +143,7 @@ export async function startLabCommand(context: vscode.ExtensionContext) {
 
             // 6. Start the background telemetry worker
             if (!globalTelemetryWorker) {
-                globalTelemetryWorker = new TelemetryWorker(context, globalDiffTracker, globalSecurityTracker, globalDebugTracker, globalTerminalTracker);
+                globalTelemetryWorker = new TelemetryWorker(context, globalDiffTracker, globalSecurityTracker, globalDebugTracker);
                 globalTelemetryWorker.start(context);
             }
 
@@ -166,16 +162,19 @@ async function authenticateWithServer(
     studentNumber: string,
     studentName: string,
     machineId: string,
+    sessionId: string
 ): Promise<any> {
     const payload = JSON.stringify({
         student_number: studentNumber,
-        student_name: studentName, // Uses the NFC-normalized name
-        machine_id: machineId,
-        timestamp: getKSTISO8601()
+        student_name: studentName, 
     });
     const res = await fetch(`${CONFIG.BASE_URL}/api/session/start`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+            'Content-Type': 'application/json' ,
+            'x-machine-id': machineId,
+            'x-session-id': sessionId
+        },
         body: payload
     });
     if (!res.ok) {
