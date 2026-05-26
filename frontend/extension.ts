@@ -7,14 +7,15 @@ import { navigateTaskCommand } from './commands/navigateTask';
 import { nextTaskCommand } from './commands/nextTask';
 import { endSessionCommand } from './commands/endSession';
 import { ReviewContentProvider } from './providers/reviewProvider';
-import { checkActiveTime } from './api/client';
 import { checkCppToolsDependency } from './utils/dependencies';
 import { secureWipeWorkspace } from './utils/secureWipe';
 import { terminateWSLSession } from './utils/wslTeardown';
 import { getKSTISO8601 } from './utils/time';
 import { initializeStatusBar } from './ui';
 import { MESSAGES } from './utils/messages';
-import { getToken, clearToken } from './utils/token';
+import { getSessionId, clearSessionId } from './utils/token';
+import { getMachineId } from './utils/machineID';
+import { CONFIG } from './utils/config';
 
 // Export globally so commands can access the setContent method
 export let globalReviewProvider: ReviewContentProvider | null = null;
@@ -80,15 +81,6 @@ export function clearExtensionOutput() {
 // This method is called when your extension is activated
 export async function activate(context: vscode.ExtensionContext) {
 
-    // 1. Time Validation (One-off call)
-    const isActiveTime = await checkActiveTime();
-
-    if (!isActiveTime) {
-        logEvent('EXT_DORMANT');
-        // Return immediately. No commands registered. No UI shown. No tracking active.
-        return;
-    }
-
     globalExtensionContext = context;
 
     logEvent('EXT_ACTIVATED');
@@ -101,8 +93,6 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
     }
 
-    // 3. Activation Approved: Proceed with system setup
-    logEvent('EXT_UI_READY');
     extLogger.show(true);
 
     // Global Error Boundary
@@ -169,12 +159,13 @@ export async function activate(context: vscode.ExtensionContext) {
 export async function deactivate(): Promise<void> {
     logEvent('EXT_TEARDOWN_INIT');
 
-    // Use token presence as source of truth for an active session
-    const hasActiveSession = globalExtensionContext && getToken(globalExtensionContext) !== undefined;
+    // Use session presence as source of truth for an active session
+    const hasActiveSession = globalExtensionContext && getSessionId(globalExtensionContext) !== undefined;
 
     // 1. Close all editors immediately to prevent VS Code from caching ghost tabs
     // This stops the "no code review md file" error loop on the next startup.
     try {
+        await vscode.workspace.saveAll();
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     } catch (e) {
         logEvent('EXT_TEARDOWN_ERROR_CLOSING');
@@ -183,24 +174,61 @@ export async function deactivate(): Promise<void> {
     if (hasActiveSession) {
         if (sessionCloseReason === 'unexpected') {
             logEvent('EXT_TEARDOWN_UNEXPECTED');
-            if (globalTelemetryWorker) {
-                globalTelemetryWorker.stop();
-                await globalTelemetryWorker.emergencyFlush();
+
+            
+            // Queue mid submission before flushing
+            const currentTaskId = globalExtensionContext.workspaceState.get<string>('currentTaskId');
+            if (currentTaskId && globalTelemetryWorker) {
+                try {
+                    const rootPath = vscode.workspace.workspaceFolders?.[0].uri;
+                    if (rootPath) {
+                        const mainUri = vscode.Uri.joinPath(rootPath, 'main.c');
+                        const contentBytes = await vscode.workspace.fs.readFile(mainUri);
+                        const content = Buffer.from(contentBytes).toString('utf8');
+                        globalTelemetryWorker.queueSubmission({
+                            submission_type: 'mid',
+                            task_id: currentTaskId,
+                            timestamp: getKSTISO8601(),
+                            sourceFiles: { 'main.c': content },
+                            vscodeConfigs: {}
+                        });
+                    }
+                } catch(e) {}
             }
+
+            // Explicitly call /api/session/end since endSessionCommand wasn't triggered
+            try {
+                const machineId = getMachineId(globalExtensionContext);
+                const sessionId = getSessionId(globalExtensionContext);
+                if (machineId && sessionId) {
+                    await fetch(`${CONFIG.BASE_URL}/api/session/end`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-machine-id': machineId,
+                            'x-session-id': sessionId
+                        },
+                        body: JSON.stringify({ status: 'suspended', timestamp: getKSTISO8601() })
+                    });
+                }
+            } catch(e) {}
+
         } else {
             logEvent('EXT_TEARDOWN_EXPECTED');
-            if (globalTelemetryWorker) {
-                globalTelemetryWorker.stop();
-            }
+        }
+
+        if (globalTelemetryWorker) {
+            globalTelemetryWorker.stop();
+            await globalTelemetryWorker.emergencyFlush();
         }
 
         // Execute Secure File Destruction
         // This runs regardless of how the session ended
         await secureWipeWorkspace();
 
-        // Purge sensitive session data & JWT token (Zero-Trust)
+        // Purge sensitive session data (Zero-Trust)
         if (globalExtensionContext) {
-            await clearToken(globalExtensionContext);
+            await clearSessionId(globalExtensionContext);
             await globalExtensionContext.workspaceState.update('studentNumber', undefined);
             await globalExtensionContext.workspaceState.update('machineId', undefined);
         }
@@ -210,17 +238,7 @@ export async function deactivate(): Promise<void> {
         globalReviewProvider.clearCache();
     }
 
-    // Execute WSL Termination
-    if (hasActiveSession) {
-        // terminateWSLSession();
-    }
-
     logEvent('EXT_TEARDOWN_DONE');
-
-    // FINAL FLUSH TO BACKEND
-    if (globalTelemetryWorker && hasActiveSession) {
-        await globalTelemetryWorker.emergencyFlush();
-    }
 
     clearExtensionOutput();
     clearLogs();
