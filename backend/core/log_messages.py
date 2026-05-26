@@ -2,6 +2,17 @@
 
 class LogMsg:
 
+    # System / Main
+    STARTUP_INIT = "C-Lab AutoSubmit Backend initializing..."
+
+
+    # Session Router
+    SES_START_REQ = "Start session requested for {student_number} {student_name} on {machine_id} - session {session_id}"
+    SES_NEW_ERR = "Failed to create new session: {error}"
+    SES_END_REQ = "End session requested for {machine_id}. Status: {status}"
+    SES_END_DESYNC = "No active session found to close for {machine_id}. Client may have desynced."
+
+
     # Auth
     AUTH_NO_SECRET = "JWT_SECRET environment variable not set! Falling back to unsafe default."
     ERR_AUTH_CLAIMS = "Invalid token claims"
@@ -18,41 +29,24 @@ class LogMsg:
     # Endpoints
     SES_DUMP_GEN = "Generated server-side DB markdown dump at {dump_path}"
     ERR_SES_DUMP = "Failed to generate server-side DB markdown dump: {error}"
-    LAB_SUBMIT_TYPE = "[{sub_type}] Submission from {student_number}"
+    LAB_SUBMIT_TYPE = "[{sub_type}] Submission on {machine_id}"
     ERR_SUBMISSION_FAILED = "Submission failed"
     TRK_EMPTY_PAYLOAD = "Empty bulk payload."
-    TRK_QUEUE_FULL = "Telemetry queue is FULL (Thundering Herd). Shedding load for {student_number}."
+    TRK_QUEUE_FULL = "Telemetry queue is FULL (Thundering Herd). Shedding load for {machine_id}."
     ERR_HIGH_LOAD = "Server is currently experiencing high load. Please retry telemetry later."
     TRK_QUEUE_BACKLOG = "Telemetry queue backlog growing: {q_size} items waiting to write to disk."
 
-    # System / Main
-    STARTUP_INIT = "C-Lab AutoSubmit Backend initializing..."
-    STARTUP_TIME = "Strict KST Time-Binding and ISO 8601 formatting active."
-    TIME_CHECK = "Time check requested from {ip}. Active status: {is_active_lab_time}"
-
-    # Lab Router
-    LAB_NO_CURRICULUM = "CRITICAL: Curriculum file not found at {path}"
-    LAB_LOADED = "Successfully loaded {count} lab tasks from curriculum.json"
-    LAB_PARSE_FAIL = "CRITICAL: Failed to parse curriculum.json. Invalid JSON format: {error}"
-    LAB_FETCH_TASKS = "Fetching seeded tasks for student: {student_number}"
-    LAB_MID_SUBMIT = "Received task submission from {student_number} on {machine_id} ({file_count} files)"
-    LAB_FINAL_SUBMIT = "Received FINAL submission from {student_number} on {machine_id}"
-
-    # Session Router
-    SES_START_REQ = "Start session requested for {student_number} {student_name} on {machine_id}"
-    SES_NEW_SHARD = "No active session. Provisioning new shard for {student_number} {student_name}"
-    SES_NEW_ERR = "Failed to create new session: {error}"
-    SES_END_REQ = "End session requested for {student_number}. Status: {status}"
-    SES_END_DESYNC = "No active session found to close for {student_number}. Client may have desynced."
+    # Lab Submissions
+    LAB_MID_SUBMIT = "Received task submission on {machine_id}"
+    LAB_FINAL_SUBMIT = "Received FINAL submission on {machine_id} ({file_count} files)"
 
     # Telemetry / Track
-    TRK_BULK_RECV = "Received bulk telemetry from {student_number} on {machine_id} (Patches: {p}, Sec: {s}, Dbg: {d}, Logs: {l}, Term: {t})"
+    TRK_BULK_RECV = "Received bulk telemetry from {machine_id})"
 
     # Database
     DB_PROVISION = "Provisioning new database shard: {db_path}"
 
     # Exceptions & API Messages
-    ERR_NO_CURRICULUM = "Curriculum missing in server."
     ERR_DB_PROVISION = "Database provisioning failed."
     ERR_INVALID_STATUS = "Status must be one of {allowed_states}"
     ERR_NO_SESSION_ID = "Database error: Failed to generate a session ID."
