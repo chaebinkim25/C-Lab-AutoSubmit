@@ -1,5 +1,11 @@
 // src/utils/time.ts
 
+export let extensionStartTime = Date.now();
+
+export function resetExtensionStartTime() {
+    extensionStartTime = Date.now();
+}
+
 export function getKSTISO8601(): string {
     const now = new Date();
     // Force a 9-hour offset for KST (Asia/Seoul)
