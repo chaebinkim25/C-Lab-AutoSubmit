@@ -2,16 +2,16 @@
 
 import * as vscode from 'vscode';
 
-const JWT_KEY = 'c-lab-autosubmit.jwtToken';
+const SESSION_KEY = 'c-lab-autosubmit.sessionId';
 
-export async function setToken(context: vscode.ExtensionContext, token: string): Promise<void> {
-    await context.globalState.update(JWT_KEY, token);
+export async function setSessionId(context: vscode.ExtensionContext, token: string): Promise<void> {
+    await context.globalState.update(SESSION_KEY, token);
 }
 
-export function getToken(context: vscode.ExtensionContext): string | undefined {
-    return context.globalState.get<string>(JWT_KEY);
+export function getSessionId(context: vscode.ExtensionContext): string | undefined {
+    return context.globalState.get<string>(SESSION_KEY);
 }
 
-export async function clearToken(context: vscode.ExtensionContext): Promise<void> {
-    await context.globalState.update(JWT_KEY, undefined);
+export async function clearSessionId(context: vscode.ExtensionContext): Promise<void> {
+    await context.globalState.update(SESSION_KEY, undefined);
 }
