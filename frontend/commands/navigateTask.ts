@@ -12,7 +12,7 @@ export async function navigateTaskCommand(context: vscode.ExtensionContext) {
 
     const items = tasks.map(t => ({
         label: t.title,
-        description: t.task_id === currentTaskId ? MESSAGES.UI.CURRENT_TASK : "",
+        description: t.task_id === currentTaskId ? MESSAGES.UI.CURRENT_TASK : t.description,
         task: t
     }));
     const selected = await vscode.window.showQuickPick(items, { placeHolder: MESSAGES.UI.SELECT_TASK });
