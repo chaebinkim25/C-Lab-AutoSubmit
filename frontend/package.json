@@ -1,22 +1,16 @@
 {
   "name": "c-lab-autosubmit",
   "displayName": "C-Lab AutoSubmit",
-  "description": "C 언어 실습 자동화 및 과제 제출 시스템",
-  "version": "1.1.3",
-  "publisher": "c-lab-autosubmit",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/chaebinkim25/C-Lab-AutoSubmit"
-  },
+  "description": "Assist with C programming computer lab sessions by logging coding behavior and automating code submissions.",
+  "version": "1.1.4",
+  "enabledApiProposals": [
+    "terminalDataWriteEvent"
+  ],
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.110.0"
   },
   "categories": [
-    "Education",
     "Other"
-  ],
-  "activationEvents": [
-    "onStartupFinished"
   ],
   "extensionKind": [
     "workspace"
@@ -51,12 +45,15 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
   },
   "devDependencies": {
     "@types/diff-match-patch": "^1.0.36",
@@ -65,7 +62,7 @@
     "@types/node": "^22.19.15",
     "@types/node-fetch": "^2.6.13",
     "@types/sinon": "^21.0.1",
-    "@types/vscode": "^1.80.0",
+    "@types/vscode": "^1.110.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.3",
