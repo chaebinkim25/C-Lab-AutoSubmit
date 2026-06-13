@@ -31,12 +31,12 @@ Every lab start is a completely clean slate.
 - **Headers:** `x-machine-id`, `x-session-id`
 - **Request Body:**
 
-    ```json
-    {
-      "student_number": "2026-12345",
-      "student_name": "홍길동",
-    }
-    ```
+```json
+{
+  "student_number": "2026-12345",
+  "student_name": "홍길동",
+}
+```
 
 ### `POST /api/session/end`
 
@@ -47,11 +47,11 @@ The backend automatically generates a parsed, human-readable Markdown representa
 - **Headers:** `x-machine-id`, `x-session-id`
 - **Request Body:**
 
-    ```json
-    {
-      "status": "completed", // or "suspended" (if unexpectedly closed)
-    }
-    ```
+```json
+{
+  "status": "completed", // or "suspended" (if unexpectedly closed)
+}
+```
 
 ---
 
@@ -65,60 +65,60 @@ A schema-less unified endpoint to dramatically reduce network overhead by combin
 
 - **Request Body:**
 
-    ```json
+```json
+{
+  "diffs": [
     {
-      "diffs": [
-        {
-          "sec": 75,
-          "file": "lab1_part1.c",
-          "is_baseline": false,
-          "delta": "@@ -15,4 +15,10 @@\n+int x = 5;\n"
-        }
-      ],
-      "events": [
-        {
-          "sec": 75,
-          "event_type": "Unauthorized Paste",
-          "file_path": "src/main.c",
-          "line_number": 24,
-          "content": "int i = 0; while(i<10) { i++; }"
-        }
-      ],
-      "debug_events": [
-        {
-          "sec": 77,
-          "debug_code": "DBG_STEP_OVER",
-          "file_path": "main.c",
-          "details": "..."
-        }
-      ],
-      "extension_logs": [
+      "sec": 75,
+      "file": "lab1_part1.c",
+      "is_baseline": false,
+      "delta": "@@ -15,4 +15,10 @@\n+int x = 5;\n"
+    }
+  ],
+  "events": [
+    {
+      "sec": 75,
+      "event_type": "Unauthorized Paste",
+      "file_path": "src/main.c",
+      "line_number": 24,
+      "content": "int i = 0; while(i<10) { i++; }"
+    }
+  ],
+  "debug_events": [
+    {
+      "sec": 77,
+      "debug_code": "DBG_STEP_OVER",
+      "file_path": "main.c",
+      "details": "..."
+    }
+  ],
+  "extension_logs": [
         "45|EXT_FATAL_UNCAUGHT"
       ],
-      "terminal_events": [
-        {
-          "sec": 80,
-          "stream": "stdin",
-          "content": "./main\n"
-        },
-        {
-          "sec": 81,
-          "stream": "stdout",
-          "content": "Hello World\n"
-        }
-      ],
-      "submissions": [
-        {
-          "submission_type": "mid",
-          "task_id": "lab11_part1",
-          "timestamp": "2026-04-15T09:30:00+09:00",
-          "sourceFiles": {
-            "main.c": "int main() { return 0; }"
-          },
-          "vscodeConfigs": {
-            ".vscode/settings.json": "{}"
-          }
-        }
-      ]      
+  "terminal_events": [
+    {
+      "sec": 80,
+      "stream": "stdin",
+      "content": "./main\n"
+    },
+    {
+      "sec": 81,
+      "stream": "stdout",
+      "content": "Hello World\n"
     }
-    ```
+  ],
+  "submissions": [
+    {
+      "submission_type": "mid",
+      "task_id": "lab11_part1",
+      "timestamp": "2026-04-15T09:30:00+09:00",
+      "sourceFiles": {
+        "main.c": "int main() { return 0; }"
+      },
+      "vscodeConfigs": {
+        ".vscode/settings.json": "{}"
+      }
+    }
+  ]      
+}
+```
