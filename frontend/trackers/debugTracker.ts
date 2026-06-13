@@ -1,7 +1,7 @@
 // src/trackers/debugTracker.ts
 
 import * as vscode from 'vscode';
-import { logEvent } from '../extension';
+import { logEvent } from '../utils/logging';
 import { MESSAGES } from '../utils/messages';
 
 export class DebugTrackerManager implements vscode.DebugAdapterTrackerFactory {
