@@ -1,58 +1,84 @@
 // src/utils/policies.ts
 
 import * as vscode from 'vscode';
-import { getKSTISO8601 } from './time';
-import { MESSAGES } from './messages';
-import { logEvent } from '../extension';
+import { logSubEvent, logEvent } from './logging';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
-
-export async function enforceLabPolicies() {
-    logEvent('UTIL_POL_ENFORCE');
-
-    // We target the 'Workspace' scope so these settings only apply to the C-Lab folder,
-    // not the student's global VS Code preferences.
-    const config = vscode.workspace.getConfiguration(undefined, null);
-
+async function update_config(item: string, value: unknown) {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    const config = vscode.workspace.getConfiguration(undefined, folder?folder.uri:null);
     try {
-        // Core Policy #4: Auto-Save with 60-second delay
-        await config.update('files.autoSave', 'afterDelay', vscode.ConfigurationTarget.Workspace);
-        await config.update('files.autoSaveDelay', 60000, vscode.ConfigurationTarget.Workspace);
-
-        // Core Policy #4: Strict Educational Formatting (8-space tabs)
-        await config.update('editor.tabSize', 8, vscode.ConfigurationTarget.Workspace);
-        await config.update('editor.insertSpaces', true, vscode.ConfigurationTarget.Workspace);
-
-        // Disable AI/Copilot completions locally
-        try {
-            await config.update('github.copilot.enable', { "*": false }, vscode.ConfigurationTarget.Workspace);
-        } catch (e) {
-            // Silently ignore: Copilot is not installed anyway
-        }
-
-        logEvent('UTIL_POL_APPLIED');
-
-    } catch (error) {
-
-        logEvent('UTIL_POL_FAIL', String(error));
+        await config.update(item, value, vscode.ConfigurationTarget.Workspace);
+        logSubEvent("UTIL_POL_UPDATE", item, JSON.stringify(value));
+    } catch (e) {
+        logSubEvent("UTIL_POL_FAIL", item, String(e));
     }
 }
 
-export function startPolicyWatchdog(context: vscode.ExtensionContext) {
+function disableDebuginfodGlobally() {
+    // Target the .gdbinit file in the user's home directory (~/.gdbinit)
+    const gdbinitPath = path.join(os.homedir(), '.gdbinit');
+    const disableCmd = 'set debuginfod enabled off\n';
 
-    logEvent('UTIL_POL_WATCH');
-
-    const watchdog = vscode.workspace.onDidChangeConfiguration((e) => {
-        // Check which specific policies were touched
-        const tamperedAutoSave = e.affectsConfiguration('files.autoSave') || e.affectsConfiguration('files.autoSaveDelay');
-        const tamperedCopilot = e.affectsConfiguration('github.copilot.enable');
-        const tamperedFormat = e.affectsConfiguration('editor.tabSize') || e.affectsConfiguration('editor.insertSpaces');
-
-        if (tamperedAutoSave || tamperedCopilot || tamperedFormat) {
-            // Send a high-visibility log without reverting the settings.
-            // This is captured by extensionLogBuffer and transmitted by TelemetryWorker.
-            logEvent('UTIL_POL_ALERT', String(tamperedAutoSave), String(tamperedCopilot), String(tamperedFormat));
+    try {
+        let content = '';
+        if (fs.existsSync(gdbinitPath)) {
+            content = fs.readFileSync(gdbinitPath, 'utf8');
         }
-    });
 
-    context.subscriptions.push(watchdog);
+        // Only append it if it's not already there
+        if (!content.includes('set debuginfod enabled off')) {
+            fs.appendFileSync(gdbinitPath, disableCmd);
+            logSubEvent("UTIL_POL_GDBINIT", "Appended debuginfod off");
+        }
+    } catch (e) {
+        logSubEvent("UTIL_POL_GDBINIT_FAIL", String(e));
+    }
+}
+
+export async function enforceLabPolicies() {
+    logSubEvent('UTIL_POL_ENFORCE');
+    logSubEvent('UTIL_POL_WORKSPACE_FILE', String(vscode.workspace.workspaceFile?.fsPath));
+    logSubEvent('UTIL_POL_WORKSPACE_FOLDERS', String(vscode.workspace.workspaceFolders?.length));
+
+    const isMac = os.platform() === 'darwin';
+    const isArm = os.arch() === 'arm64';
+
+    const intelliSenseMode = isMac 
+        ? (isArm ? 'macos-clang-arm64' : 'macos-clang-x64') 
+        : (isArm ? 'linux-gcc-arm64' : 'linux-gcc-x64');
+
+    const compilerPath = isMac ? '/usr/bin/clang' : '/usr/bin/gcc';
+
+    for (const [item, value] of Object.entries({
+        'files.autoSave': 'afterDelay',
+        'files.autoSaveDelay': 1000,
+
+        'editor.wordWrap': 'on',
+
+        "[c]": {
+            'editor.tabSize': 8,
+            'editor.detectIndentation': false,
+            'editor.insertSpaces': true
+        },
+
+        'terminal.integrated.env.linux': {
+            'DEBUGINFOD_URLS': ''
+        },
+
+        'github.copilot.enable': { "*": false },
+
+        'C_Cpp.default.compilerPath': compilerPath,
+        'C_Cpp.default.intelliSenseMode': intelliSenseMode,
+        'C_Cpp.default.cStandard': 'c99'
+    })) {
+        await update_config(item, value);
+        
+    }
+
+    disableDebuginfodGlobally();
+
+    logSubEvent('UTIL_POL_APPLIED');
 }
