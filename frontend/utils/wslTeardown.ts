@@ -2,7 +2,7 @@
 
 import { exec } from 'child_process';
 import * as vscode from 'vscode';
-import { logEvent } from '../extension';
+import { logEvent } from './logging';
 
 export function terminateWSLSession(): void {
     // 1. Detect if we are running inside WSL
