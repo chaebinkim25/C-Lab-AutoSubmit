@@ -1,9 +1,19 @@
 // src/providers/reviewProvider.ts
 
 import * as vscode from 'vscode';
-import { getKSTISO8601 } from '../utils/time';
 import { MESSAGES } from '../utils/messages';
-import { logEvent } from '../extension';
+import { logEvent } from '../utils/logging';
+
+export let globalReviewProvider: ReviewContentProvider | null = null;
+
+export function globalReviewProviderInit(context: vscode.ExtensionContext) {
+    globalReviewProvider = new ReviewContentProvider();
+    const providerRegistration = vscode.workspace.registerTextDocumentContentProvider(
+        'clab-review',
+        globalReviewProvider
+    );
+    context.subscriptions.push(providerRegistration);
+}
 
 export class ReviewContentProvider implements vscode.TextDocumentContentProvider {
     // Event emitter required by VS Code to signal when a virtual document's content changes
