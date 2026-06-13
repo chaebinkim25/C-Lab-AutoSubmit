@@ -1,6 +1,6 @@
 # C-Lab AutoSubmit System - Checklist
 
-- [ ] when activate, if it is not lab time, do not show anything
+- [ ] when activate, do not show start lab ui icon in the beginning
 - [ ] when start lab, if windows, activate and connect to wsl
 - [ ] when start lab, auto-update the extension
 - [ ] when start lab, open dedicated folder
