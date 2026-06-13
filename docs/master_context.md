@@ -16,55 +16,43 @@
 
 ## 2. Core Policies
 
-1. **authentication & zero-trust session tokens:** When starting a session, the student inputs their Student Number (enforced via Regex to match a `YYYY-NNNNN` format) and Full Name. The backend verifies this initial login and issues a stateless JSON Web Token (JWT). To enforce a Zero-Trust architecture, the `student_number` is explicitly removed from all subsequent client-side network payloads. Instead, the extension authenticates all future requests by passing the JWT as a Bearer token in the `Authorization` header.
+1. **client identity & stateless headers:** When starting a session, the student inputs their Student Number (enforced via Regex to match a `YYYY-NNNNN` format) and Full Name. The extension locally generates a unique `session_id`. To enforce a Zero-Trust architecture, the extension explicitly authenticates all future requests by passing these identities (`x-machine-id`, `x-session-id`) in the HTTP headers. No JWTs or server-side session tokens are used.
 
-2. **class time sync:** The extension is only active during scheduled lab hours and remains completely dormant outside of these times.
+2. **zero-trust local storage & ephemeral sessions:** To prevent code leakage on shared lab workstations, the extension ALWAYS securely overwrites (with empty bytes) and permanently deletes the local source files **and the hidden cache folder** upon ANY deactivation event (expected shutdown, closing VS Code, or WSL disconnect). **Any deactivation immediately purges the local session variables. There are no "un-finalized" or resumable sessions.** Upon restarting the lab, the backend explicitly invalidates old data, provisions a completely new session and database shard. The extension automatically loads the first task and initializes a fresh hidden cache folder.
 
-3. **zero-trust local storage & ephemeral sessions:** To prevent code leakage on shared lab workstations, the extension ALWAYS securely overwrites (with empty bytes) and permanently deletes the local source files **and the hidden cache folder** upon ANY deactivation event (expected shutdown, closing VS Code, or WSL disconnect). **Any deactivation immediately expires the session token. There are no "un-finalized" or resumable sessions.** Upon restarting the lab, the backend explicitly invalidates old data, provisions a completely new session, token, and database shard. The extension automatically loads the first task and initializes a fresh hidden cache folder.
+3. **policy enforcement (auto-save & formatting):** The extension overrides the workspace settings to force `files.autoSave` with a 60-second delay, disables AI/Copilot code completions, and strictly enforces educational formatting (e.g., 8-space tab sizes). A background Policy Watchdog continuously monitors these settings.
 
-4. **policy enforcement (auto-save & formatting):** The extension overrides the workspace settings to force `files.autoSave` with a 60-second delay, disables AI/Copilot code completions, and strictly enforces educational formatting (e.g., 8-space tab sizes). A background Policy Watchdog continuously monitors these settings.
+4. **machine ID & session binding:** Upon the first execution of the extension, a `machine_id` is securely generated and saved locally. The frontend dynamically generates a unique `session_id` and securely binds it alongside the machine and student data on all subsequent requests.
 
-5. **machine ID & token binding:** Upon the first execution of the extension, a `machine_id` is securely generated and saved locally. This ID is transmitted during the initial login and embedded as a claim within the backend-issued JWT. The backend validates this bound `machine_id` alongside the token signature on all subsequent requests to prevent token theft and session hijacking.
+5. **workspace provisioning:** The extension enforces a dedicated default workspace (`~/C-Lab-Workspace`) and automatically provisions a folder inside the default WSL distribution for Windows users.
 
-6. **workspace provisioning:** The extension enforces a dedicated default workspace (`~/C-Lab-Workspace`) and automatically provisions a folder inside the default WSL distribution for Windows users.
+6. **file system auditing & auto-save conflict resolution:** A background File Watcher strictly audits the workspace for external file creations and deletions. To prevent an infinite loop of false-positive security alerts caused by the forced 60-second `files.autoSave` policy, the File Watcher MUST strictly ignore internal VS Code save events. General file modifications must be monitored exclusively by the internal Diff Tracker, which is already aware of VS Code's editor state. **Whenever logging a file-specific violation, the extension MUST preserve and transmit the exact relative path. It must retain file extensions (e.g., `main.c`) if present, and accurately capture directories or extensionless files (e.g., `Makefile`) without artificially altering the path.**
 
-7. **file system auditing & auto-save conflict resolution:** A background File Watcher strictly audits the workspace for external file creations and deletions. To prevent an infinite loop of false-positive security alerts caused by the forced 60-second `files.autoSave` policy, the File Watcher MUST strictly ignore internal VS Code save events. General file modifications must be monitored exclusively by the internal Diff Tracker, which is already aware of VS Code's editor state. **Whenever logging a file-specific violation, the extension MUST preserve and transmit the exact relative path. It must retain file extensions (e.g., `main.c`) if present, and accurately capture directories or extensionless files (e.g., `Makefile`) without artificially altering the path.**
+7. **cross-platform encoding & normalization:** To prevent Korean character malformation (specifically NFD decomposition issues native to macOS file systems and inputs), the extension MUST normalize all Korean string inputs (e.g., Student Name) to **NFC (Normalization Form Canonical Composition)** before transmission. Furthermore, the backend's file sanitization logic must explicitly permit Korean Unicode ranges, and all file I/O operations must strictly enforce UTF-8 encoding.
 
-8. **cross-platform encoding & normalization:** To prevent Korean character malformation (specifically NFD decomposition issues native to macOS file systems and inputs), the extension MUST normalize all Korean string inputs (e.g., Student Name) to **NFC (Normalization Form Canonical Composition)** before transmission. Furthermore, the backend's file sanitization logic must explicitly permit Korean Unicode ranges, and all file I/O operations must strictly enforce UTF-8 encoding.
+8. **stateless api architecture:** To prevent submission failures during high concurrency or multi-worker server deployments, the backend MUST NOT rely on in-memory variables. The database shard naming must be deterministic and **strictly bound to the machine and session IDs** (e.g., `{machine_id}_{session_id}.db`). The backend securely extracts the `machine_id` and `session_id` from the custom HTTP headers (`x-machine-id`, `x-session-id`) to securely route data to the correct shard.
 
-9. **stateless api architecture & kst time-binding:** To prevent submission failures during high concurrency or multi-worker server deployments, the backend MUST NOT rely on in-memory variables. The `session_id` and database shard naming must be deterministic and **strictly bound to the KST (`Asia/Seoul`) timezone and the student's ID** (e.g., `YYYY-MM-DD_KST_{student_number}`). Because the frontend no longer transmits the `student_number` directly, the backend autonomously extracts this ID from the validated JWT claims to route data to the correct shard.
+9. **extension diagnostics & health monitoring:** To facilitate remote debugging and ensure system stability, the VS Code extension must autonomously capture internal operational errors, unhandled exceptions, and critical state changes, securely transmitting these client-side diagnostic logs back to the server.
 
-10. **extension diagnostics & health monitoring:** To facilitate remote debugging and ensure system stability, the VS Code extension must autonomously capture internal operational errors, unhandled exceptions, and critical state changes, securely transmitting these client-side diagnostic logs back to the server.
+10. **korean localization:** All user-facing UI elements, status bar items, input box prompts, warning/error/info notifications, and the generated Markdown review MUST be written in Korean to ensure clarity and accessibility for the local student base.
 
-11. **korean localization:** All user-facing UI elements, status bar items, input box prompts, warning/error/info notifications, and the generated Markdown review MUST be written in Korean to ensure clarity and accessibility for the local student base.
-
-12. **unified log formatting:** To ensure chronological consistency and predictable parsing, ALL server endpoint logs, database `timestamp` columns, diagnostic telemetry, and client-server JSON payloads MUST strictly adhere to a single unified timestamp format: **ISO 8601 with KST offset (`YYYY-MM-DDTHH:MM:SS+09:00`)**.
+11. **single-sided information flow:** To maximize network resilience, the system strictly enforces a one-way information flow. The frontend operates autonomously (handling its own task definitions, PRNG generation, session ID generation, and state transitions) and purely pushes data to the backend. The backend acts solely as a passive data sink and never dictates state or serves content to the client, including session tokens.
 
 ## 3. Core Workflows
 
-### A. Activation: initialization to idle state
+### A. Activation: Manual Initialization
 
-- **trigger:** the extension activates when VS Code opens.
+- **trigger:** the extension does NOT activate on startup. It activates strictly when the user manually executes the "start lab" command via the Command Palette.
 
 - **command registration:** internal commands (`c-lab.startLab`, `c-lab.navigateTask`, `c-lab.midSubmit`, `c-lab.finalSubmit`, `c-lab.getReview`) are registered.
 
-- **time validation:** the extension fires a one-off call to the `/api/check-time` endpoint.
-
-- **state handling:**
-
-  - **if `false` (not class time):** the extension remains dormant. No UI elements are rendered, and tracking is bypassed.
-
-  - **if `true` (class time):** it proceeds to the next steps.
-
-- **update check:** verifies version parity with the backend. If outdated, the UI shows an "Updating..." state and halts initialization until VS Code completes the auto-update and reloads.
-
 - **dependency validation:** checks if the `ms-vscode.cpptools` extension is active. If missing, it provides a bulletproof UI prompt guiding the user to install it and reload the window.
 
-- **ui element reveal:** reveals the "start lab" button in the VS Code UI.
+- **ui element state:** reveals the "Start Lab" button in the VS Code UI upon activation.
 
 ### B. Start Lab: Authentication & Provisioning
 
-- **trigger:** the user executes the "start lab" command.
+- **trigger:** the user executes the "start lab" command via the Command Palette or the UI button.
 
 - **workspace routing:** determines the default `C-Lab-Workspace` folder path and triggers a window reload to eject the current folder and open the secure workspace environment.
 
@@ -72,7 +60,7 @@
 
 - **workspace validation:** verifies the folder is in a "Trusted" state. Enforces the strict auto-save, anti-cheat, and formatting policies.
 
-- **session initialization:** calls the `/api/session/start` endpoint with the student credentials and `machine_id`. The backend explicitly **expires any previous sessions/tokens** associated with this machine. It establishes a completely new, deterministic database shard explicitly formatted for the new session (e.g., `{machine_id}_{session_id}.db`) and responds with a fresh stateless JWT.
+- **session initialization:** The extension generates a unique `session_id` and calls the `/api/session/start` endpoint with the student credentials and `machine_id`. The backend establishes a completely new, deterministic database shard explicitly formatted for the new session (e.g., `{machine_id}_{session_id}.db`) and responds with a 200 OK.
 
 - **cache initialization:** The extension creates a local secret folder (e.g., `.clab_cache/`) to hold task history during the active session.
 
@@ -85,21 +73,21 @@
   2. The student selects a new task (or automatically advances if using the Next Task button).
 
   3. If the selected task exists in `.clab_cache/`, it is restored to `main.c`. 
-     If not, a fresh skeleton is fetched from the backend.
+     If not, a fresh skeleton is generated locally.
 
-- **task fetching:** the backend dynamically seeds PRNG placeholders (e.g., `{{RAND_min_max}}`) within the skeleton code to issue randomized variables specific to that student.
+- **task generating:** the frontend dynamically seeds PRNG placeholders (e.g., `{{RAND_min_max}}`) within the skeleton code using a pseudo-random number generator bounded by the student ID to issue randomized variables specific to that student.
 
-- **baseline setup:** the extension writes the downloaded skeleton code (or resumed code) to the local lab folder (enforcing UTF-8 encoding), explicitly initializes the text baseline for the background trackers (preventing auto-formatter false positives), and transmits a baseline diff to the server using the JWT Bearer token.
+- **baseline setup:** the extension writes the downloaded skeleton code (or resumed code) to the local lab folder (enforcing UTF-8 encoding), explicitly initializes the text baseline for the background trackers (preventing auto-formatter false positives), and transmits a baseline diff to the server using the custom headers.
 
 - **tracker initialization:** starts the Diff Tracker, Debug Tracker, Policy Watchdog, and File Watcher.
 
 ### C. Track A: Diff Data Acquisition (True Delta Patches)
 
-+- **delta encoding & baseline anchors:** Instead of transmitting the full file content, the extension calculates true text deltas (patches). **CRITICAL EXCEPTION:** Whenever a task is loaded (either a fresh skeleton OR **navigating back to a cached, previously started task**), the tracker MUST transmit the full file text as a baseline (`is_baseline: true`). Since all tasks share the `main.c` editor window, these periodic baselines guarantee the backend's chronological diff reconstruction engine always has the correct anchor and doesn't accidentally apply a Task 2 patch to a Task 1 history.
+- **delta encoding & baseline anchors:** Instead of transmitting the full file content, the extension calculates true text deltas (patches). **CRITICAL EXCEPTION:** Whenever a task is loaded (either a fresh skeleton OR **navigating back to a cached, previously started task**), the tracker MUST transmit the full file text as a baseline (`is_baseline: true`). Since all tasks share the `main.c` editor window, these periodic baselines guarantee the backend's chronological diff reconstruction engine always has the correct anchor and doesn't accidentally apply a Task 2 patch to a Task 1 history.
 
-- **diff aggregation:** modifications are aggregated into 1-second timestamped intervals (recorded in ISO 8601 KST).
+- **diff aggregation:** modifications are aggregated into 1-second timestamped intervals.
 
-- **data transmission:** the background worker queue sweeps the lightweight patch payloads and bundles them with other telemetry (security, debug, diagnostics) to push to the unified `/api/track/bulk` endpoint at randomized intervals (10–20 seconds), drastically reducing network packet overhead.
+- **data transmission:** the background worker queue sweeps the lightweight patch payloads and bundles them with other telemetry (security, debug, diagnostics) to push to the unified `/api/track/bulk` endpoint at randomized intervals (60–70 seconds), drastically reducing network packet overhead.
 
 - **system operation bypass:** The tracker pauses (`isSystemOperation`) during internal file swaps (like navigating tasks) to prevent massive delta payloads from being generated by the extension's own operations.
 
@@ -144,7 +132,7 @@
 - **execution:** **This action executes silently without any confirmation dialog.**
   *(Protected by a 3-second frontend debounce lock to prevent double-click network spam).*
 
-- **data transmission:** queued locally and sent asynchronously to the backend (`/api/track/bulk`) in a fire-and-forget manner to avoid blocking the student's main thread UI.
+- **data transmission:** pushed into the local telemetry worker queue and flushed asynchronously to the backend (`/api/track/bulk`) to avoid blocking the student's main thread UI.
 
 ### G. Track E: Final Submission & Review
 
@@ -157,11 +145,11 @@
 
   - Aggregates the currently active `main.c`, all cached historical files, and the full extension log buffer into a single localized Markdown string.
 
-  - Transmits ONLY this generated review document in the `sourceFiles` payload via `/api/session/submit` (tagged as `final`).
+  - Queues ONLY this generated review document in the `sourceFiles` payload to the telemetry worker (tagged as `final`).
 
   - closes all open editors.
 
-- **asynchronous fallback:** Protected by a local retry mechanism with exponential backoff. If the server gets overloaded (e.g., returning 503 or 429) during the submission spike at the end of the lab, the extension will hold the payload and automatically retry, guaranteeing successful delivery.
+- **asynchronous fallback:** Submissions share the background worker's requeue mechanism. If the server gets overloaded during the submission spike at the end of the lab, the extension holds the payload in memory and automatically retries on the next interval.
 
 - **review phase:** Immediately serves the locally generated Markdown review document to the student via a read-only virtual text provider (`clab-review://`) to prevent infinite "save" loops.
 
@@ -173,7 +161,7 @@
 
 - **trigger:** Unexpected deactivation (closing VS Code), explicitly executing `c-lab.endSession` via the Command Palette during a lab, OR clicking the "End Session" UI button during the final Review Phase.
 
-- **unexpected deactivation (suspend):** If the system detects a deactivation event before a `final` submission, it autonomously builds and transmits a backup `mid` submission payload. It transmits a session termination payload (`/api/session/end`) tagged as `suspended`. **It closes all open editor tabs, executes the strict data destruction policy (zero-byte wipe and delete) on local files, and the token is permanently expired.**
+- **unexpected deactivation (suspend):** If the system detects a deactivation event before a `final` submission, it autonomously builds and queues a backup `mid` submission payload, executing an emergency telemetry flush. It transmits a session termination payload (`/api/session/end`) tagged as `suspended`. **It closes all open editor tabs, executes the strict data destruction policy (zero-byte wipe and delete) on local files.**
 
 - **expected deactivation(cleanup):** The expected "Cleanup" path is now handled directly within Track E (Final Submission), which sets the `sessionCloseReason` to `expected` and relies on the extension's native `deactivate()` hook to perform the zero-trust data wipe and WSL teardown.
 
@@ -189,20 +177,14 @@
 
 ## 4. Backend API specification
 
-- `GET /api/check-time`: Returns a boolean validating if the current server time falls strictly within scheduled KST lab hours.
+- `POST /api/session/start`: Validates student data. Applies Unicode-safe regex sanitization to the student's name. **Invalidates any existing sessions for the machine.** Provisions a completely new, stateless SQLite shard specifically bound to the **Machine ID and frontend-generated Session ID** (e.g., `{machine_id}_{session_id}.db`).
 
-- `GET /api/lab/tasks`: Retrieves the sequence of assignments. Synthesizes a dedicated PRNG seed to swap placeholder tags (like `{{RAND_min_max}}`) with integers unique to the requesting student ID.
+- `POST /api/session/end`: Receives the termination status (`suspended` or `completed`) and records the timestamp in the database to explicitly close the session audit log and calculate total lab duration.
 
-- `POST /api/session/start`: Validates student data. Applies Unicode-safe regex sanitization to the student's name. **Invalidates any existing tokens/sessions for the machine.** Provisions a completely new, stateless SQLite shard specifically bound to the **Machine ID and new Session ID** (e.g., `{machine_id}_{session_id}.db`). Returns the new token and initializes the fresh session for task navigation via the UI.
-
-- `POST /api/session/submit`: Processes, archives, and associates major milestone snapshots (`mid` or `final`) alongside internal `.vscode` environment configs, safely querying the stateless machine/session-bound shard.
-
-- `POST /api/session/end`: Receives the termination status (`suspended` or `completed`) and records the final KST timestamp in the database to explicitly close the session audit log and calculate total lab duration.
-
-- `POST /api/track/bulk`: Receives and routes unified payload streams (diffs, security violations, debug logs, and extension logs) to their respective database tables in the stateless shard.
+- `POST /api/track/bulk`: Receives and routes unified payload streams (diffs, security violations, debug logs, extension logs, and **submissions**) to their respective database tables in the stateless shard.
 
 ## 5. Publish Strategy
 
-- **server:** Deploy to the cloud inside a FastAPI container utilizing multi-worker scaling. Enforce `HTTPS` to prevent token theft or differential payload network hijacking. Ensure the container storage for SQLite files is persistent and stateful. Use standard python logging configured to output ISO 8601 KST timestamps.
+- **server:** Deploy to the cloud inside a FastAPI container utilizing multi-worker scaling. Enforce `HTTPS` to prevent token theft or differential payload network hijacking. Ensure the container storage for SQLite files is persistent and stateful. Use standard python logging.
 
 - **client:** Publish through the VS Code Marketplace (`vsce publish`). Rely on native auto-updates combined with the forced `enforceVersionCheck` blocking mechanism.
