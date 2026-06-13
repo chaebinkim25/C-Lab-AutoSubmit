@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import { getMachineId } from '../utils/machineID';
 import { ensureSecureWorkspace, validateWorkspaceTrust } from '../utils/workspace';
-import { enforceLabPolicies, startPolicyWatchdog } from '../utils/policies';
+import { enforceLabPolicies } from '../utils/policies';
 import { DiffTracker } from '../trackers/diffTracker';
 import { TelemetryWorker } from '../trackers/telemetryWorker';
 import { performTaskSwitch } from './taskHelpers';
@@ -13,11 +13,11 @@ import { DebugTrackerManager } from '../trackers/debugTracker';
 import { promptStudentLogin, promptStudentName, showSuccess, showError, updateStatusBar } from '../ui';
 import { cleanupWorkspaceOnStartup } from '../utils/secureWipe';
 import { MESSAGES } from '../utils/messages';
-import { getKSTISO8601 } from '../utils/time';
 import { CONFIG } from '../utils/config';
 import { setSessionId } from '../utils/token';
 import { getSeededTasks } from '../data/tasks';
-import { logEvent, clearLogs, clearExtensionOutput, resetExtensionStartTime } from '../extension';
+import { logEvent, clearLogs, clearExtensionOutput, logSubEvent } from '../utils/logging';
+import { resetExtensionStartTime } from '../utils/time';
 
 // Instantiate the tracker globally so we can access its patch queue later
 export let globalDiffTracker: DiffTracker | null = null;
@@ -35,17 +35,22 @@ export function setLabRunning(state: boolean) {
 
 export async function startLabCommand(context: vscode.ExtensionContext) {
 
-    if (isStarting || isLabRunning) {
-        vscode.window.showWarningMessage(MESSAGES.ERRORS.ALREADY_STARTED);
+    logEvent('START_EXEC');
+
+    if (isStarting) {
+        logSubEvent('START_IS_STARTING');
+        logEvent('START_ABORT');
         return;
     }
-    isStarting = true;
-    
-    clearLogs();
-    clearExtensionOutput();
-    resetExtensionStartTime();
 
-    logEvent('START_EXEC');
+    if (isLabRunning) {
+        logSubEvent('START_IS_LAB_RUNNING');
+        logEvent('START_ABORT');
+        return;
+    }
+
+    isStarting = true;    
+    resetExtensionStartTime();
 
     // 1. Validate and enforce the workspace routing
     const isSecureWorkspace = await ensureSecureWorkspace();
@@ -61,12 +66,6 @@ export async function startLabCommand(context: vscode.ExtensionContext) {
         isStarting = false;
         return;
     }
-
-    // 3. Enforce strictly controlled workspace settings (Auto-Save, Formatting)
-    await enforceLabPolicies();
-
-    // Start the silent watchdog
-    startPolicyWatchdog(context);
 
     // 4. Retrieve or generate the persistent Machine ID
     const machineId = getMachineId(context);
@@ -104,6 +103,9 @@ export async function startLabCommand(context: vscode.ExtensionContext) {
 
     // Purge the workspace of old runs, leftover binaries, and stale .vscode configs
     await cleanupWorkspaceOnStartup();
+
+    // 3. Enforce strictly controlled workspace settings (Auto-Save, Formatting)
+    await enforceLabPolicies();
 
     vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
