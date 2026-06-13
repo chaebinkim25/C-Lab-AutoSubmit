@@ -3,7 +3,7 @@
 import * as vscode from 'vscode';
 import { getKSTISO8601 } from './time';
 import { MESSAGES } from './messages';
-import { logEvent } from '../extension';
+import { logEvent } from './logging';
 
 export async function secureWipeWorkspace(): Promise<void> {
     try {
