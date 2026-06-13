@@ -3,12 +3,13 @@
 import * as vscode from 'vscode';
 import { getKSTISO8601 } from '../utils/time';
 import { globalTelemetryWorker, globalSecurityTracker, globalDiffTracker, globalDebugTracker } from './startLab';
-import { setSessionCloseReason, globalReviewProvider, logEvent, clearExtensionOutput } from '../extension';
+import { setSessionCloseReason } from '../extension';
+import { logEvent, clearExtensionOutput } from '../utils/logging';
 import { promptFinalSubmitConfirmation, showSuccess, showError, updateStatusBar } from '../ui';
 import { MESSAGES } from '../utils/messages';
-import { CONFIG } from '../utils/config';
 import { getSessionId } from '../utils/token';
 import { generateLocalReview } from '../utils/reviewGenerator';
+import { globalReviewProvider } from '../providers/reviewProvider';
 
 // Rate Limiting State
 
@@ -48,8 +49,16 @@ export async function midSubmitCommand(context: vscode.ExtensionContext) {
             globalTelemetryWorker.queueSubmission(payloadObj);
         }
         
-        showSuccess(MESSAGES.SUCCESS.TASK_SUBMITTED);
-        await vscode.commands.executeCommand('c-lab.nextTask');
+        const tasks: any[] = context.workspaceState.get('labTasks') || [];
+        const currentIndex = tasks.findIndex(t => t.task_id === currentTaskId);
+        const isLastTask = currentIndex >= tasks.length - 1;
+
+        if (isLastTask) {
+            showSuccess(MESSAGES.SUCCESS.TASK_SUBMITTED_LAST);    
+        } else {
+            showSuccess(MESSAGES.SUCCESS.TASK_SUBMITTED_AND_MOVE);
+            await vscode.commands.executeCommand('c-lab.nextTask');
+        }
         
     } catch (error: any) {
         logEvent('SUBMIT_ERROR', error.message);
@@ -175,8 +184,7 @@ async function executeFinalTeardown(context: vscode.ExtensionContext, reviewMark
     if (globalDiffTracker) { globalDiffTracker.stop(); }
     if (globalDebugTracker) { globalDebugTracker.stop(); }
 
-    const studentNumber = context.workspaceState.get<string>('studentNumber') || "Unknown";
-    const uri = vscode.Uri.parse(`clab-review://feedback/코드_리뷰_${studentNumber}.md`);
+    const uri = vscode.Uri.parse(`clab-review:/submitted_code.md`);
     if (globalReviewProvider) {
         globalReviewProvider.setContent(uri, reviewMarkdown);
     }
