@@ -1,12 +1,11 @@
 // src/trackers/securityTrackers.ts
 
 import * as vscode from 'vscode';
-import { logEvent } from '../extension';
+import { logEvent } from '../utils/logging';
 import { MESSAGES } from '../utils/messages';
 
 export class SecurityTracker {
     private lastKnownText: Map<string, string> = new Map();
-    private recentlyDeletedBuffer: string[] = [];
     private securityEvents: any[] = [];
 
     // Track exactly when they tabbed out
@@ -15,10 +14,6 @@ export class SecurityTracker {
     // State for active editor tracking
     private activeFilePath: string | null = null;
     private activeFileEntryTime: number | null = null;
-
-    // Configuration
-    private readonly PASTE_THRESHOLD = 5; // Insertions larger than this trigger the paste check
-    private readonly BUFFER_MAX_SIZE = 50; // Max number of deleted snippets to remember
 
     public isSystemOperation: boolean = false;
     private isActive: boolean = true;
@@ -33,33 +28,16 @@ export class SecurityTracker {
     public start(context: vscode.ExtensionContext) {
         this.sessionStartTime = Date.now();
 
-        // Hook Track B.1 (Paste Detection)
-        const changeDisposable = vscode.workspace.onDidChangeTextDocument(e => this.analyzeChanges(e));
-        context.subscriptions.push(changeDisposable);
-
-        // Hook Track B.2 (Window Focus Detection)
         const windowStateDisposable = vscode.window.onDidChangeWindowState(e => this.analyzeWindowState(e));
         context.subscriptions.push(windowStateDisposable);
 
-        // Hook Track B.3 (Active Editor Change) ---
         const activeEditorDisposable = vscode.window.onDidChangeActiveTextEditor(e => this.analyzeActiveEditorChange(e));
         context.subscriptions.push(activeEditorDisposable);
 
-        // Initialize the first active file if one is already open when the lab starts
         if (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri.scheme === 'file') {
             this.activeFilePath = vscode.workspace.asRelativePath(vscode.window.activeTextEditor.document.uri);
             this.activeFileEntryTime = Date.now();
         }
-
-        // Hook Track B.4 (File System Watcher) ---
-        const fileCreateDisposable = vscode.workspace.onDidCreateFiles(e => this.analyzeFileEvent('create', e.files));
-        context.subscriptions.push(fileCreateDisposable);
-
-        const fileDeleteDisposable = vscode.workspace.onDidDeleteFiles(e => this.analyzeFileEvent('delete', e.files));
-        context.subscriptions.push(fileDeleteDisposable);
-
-        const fileRenameDisposable = vscode.workspace.onDidRenameFiles(e => this.analyzeFileRename(e.files));
-        context.subscriptions.push(fileRenameDisposable);
 
         logEvent('TRK_SEC_ACTIVE');
     }
@@ -67,77 +45,6 @@ export class SecurityTracker {
     public stop() {
         this.isActive = false;
         logEvent('TRK_SEC_DEACTIVATED');
-    }
-
-    private analyzeFileEvent(action: 'create' | 'delete', files: readonly vscode.Uri[]) {
-        
-        if (!this.isActive) { return; }
-        
-        for (const file of files) {
-            
-            if (file.scheme !== 'file') {continue;}
-
-            // `asRelativePath` inherently preserves the full file name and extension
-            const relativePath = vscode.workspace.asRelativePath(file).normalize('NFC');
-
-            // Extract just the file name (e.g., 'main.c' or '.main.c.swp')
-            const fileName = relativePath.split(/[/\\]/).pop() || '';
-
-            // Ignore Auto-Save and OS temporary files
-            // This filters out files starting with '.' (hidden files), ending with '~' (backups),
-            // or having .tmp, .bak, .swp extensions.
-            if (
-                fileName.startsWith('.') ||
-                fileName.endsWith('~') ||
-                fileName.match(/\.(tmp|bak|swp)$/i)
-            ) {
-                continue;
-            }
-
-            if (action === 'create') {
-                logEvent('TRK_SEC_FILE_CREATE', relativePath);
-            } else {
-                logEvent('TRK_SEC_FILE_DELETE', relativePath);
-            }
-
-            this.securityEvents.push({
-                elapsed_seconds: this.getElapsedSeconds(),
-                event_type: `file_${action}`,
-                file_path: relativePath,
-                content: MESSAGES.TRACKER.FILE_ACTION(action)
-            });
-        }
-    }
-
-    private analyzeFileRename(files: readonly { oldUri: vscode.Uri, newUri: vscode.Uri }[]) {
-        
-        if (!this.isActive) { return; }
-
-        for (const file of files) {
-            if (file.newUri.scheme !== 'file') {continue;}
-
-            const oldPath = vscode.workspace.asRelativePath(file.oldUri).normalize('NFC');
-            const newPath = vscode.workspace.asRelativePath(file.newUri).normalize('NFC');
-            const newFileName = newPath.split(/[/\\]/).pop() || '';
-
-            // Ignore temporary files generated by auto-save or formatters during the rename cycle
-            if (
-                newFileName.startsWith('.') ||
-                newFileName.endsWith('~') ||
-                newFileName.match(/\.(tmp|bak|swp)$/i)
-            ) {
-                continue;
-            }
-
-            logEvent('TRK_SEC_RENAME', oldPath, newPath);
-
-            this.securityEvents.push({
-                elapsed_seconds: this.getElapsedSeconds(),
-                event_type: 'file_rename',
-                file_path: newPath,
-                content: MESSAGES.TRACKER.FILE_RENAME(oldPath)
-            });
-        }
     }
 
     private analyzeActiveEditorChange(editor: vscode.TextEditor | undefined) {
@@ -222,112 +129,11 @@ export class SecurityTracker {
         this.lastKnownText.set(documentUri.fsPath, text);
     }
 
-    private analyzeChanges(event: vscode.TextDocumentChangeEvent) {
-
-        if (!this.isActive) { return; }
-        
-        // Bypass tracking if the extension itself is writing the file
-        if (this.isSystemOperation) {
-            // Update the baseline so it doesn't trigger when tracking resumes
-            this.lastKnownText.set(event.document.uri.fsPath, event.document.getText());
-            return;
-        }
-
-        const document = event.document;
-        if (document.uri.scheme !== 'file') {return;}
-
-        const filePath = document.uri.fsPath;
-        const currentText = document.getText();
-
-        // We MUST grab the previous text to know what was deleted,
-        // as VS Code only tells us the length and offset of a deletion.
-        const previousText = this.lastKnownText.get(filePath) || "";
-
-        for (const change of event.contentChanges) {
-            // 1. Capture Deletions (Cut or mass-delete)
-            if (change.rangeLength > 0) {
-                const deletedText = previousText.substring(change.rangeOffset, change.rangeOffset + change.rangeLength);
-                if (deletedText.trim().length >= this.PASTE_THRESHOLD) {
-                    this.addToDeletedBuffer(deletedText);
-                }
-            }
-
-            // 2. Capture Insertions (Paste)
-            const insertedText = change.text;
-            if (insertedText.length >= this.PASTE_THRESHOLD) {
-                this.verifyPasteLegitimacy(insertedText, previousText, filePath, change.range, document);
-            }
-        }
-
-        // Update baseline for the next millisecond's comparison
-        this.lastKnownText.set(filePath, currentText);
-    }
-
-    private addToDeletedBuffer(text: string) {
-        this.recentlyDeletedBuffer.push(text.trim());
-        // FIFO queue: Prevent memory leaks by dropping the oldest deleted snippets
-        if (this.recentlyDeletedBuffer.length > this.BUFFER_MAX_SIZE) {
-            this.recentlyDeletedBuffer.shift();
-        }
-    }
-
-    private verifyPasteLegitimacy(pastedText: string, previousText: string, filePath: string, range: vscode.Range, document: vscode.TextDocument) {
-        const trimmedPaste = pastedText.trim();
-
-        // Check A: Did they copy this from elsewhere in the CURRENT file? (diffBuffer check)
-        const isFromCurrentFile = previousText.includes(trimmedPaste);
-
-        // Check B: Did they cut/delete this earlier? (recentlyDeletedBuffer check)
-        const isFromDeleted = this.recentlyDeletedBuffer.some(deleted =>
-            deleted.includes(trimmedPaste) || trimmedPaste.includes(deleted)
-        );
-
-        if (isFromCurrentFile || isFromDeleted) {
-            logEvent('TRK_SEC_LEGIT');
-        } else {
-            logEvent('TRK_SEC_UNAUTH');
-
-            // VS Code ranges are 0-indexed. Add 1 for human-readable line numbers.
-            const exactLine = range.start.line;
-            const displayLine = exactLine + 1;
-
-            // Calculate how many lines the paste itself took up
-            const pasteLineCount = pastedText.split('\n').length;
-
-            // Grab 2 lines above and 2 lines below the paste block
-            const startLine = Math.max(0, exactLine - 2);
-            const endLine = Math.min(document.lineCount - 1, exactLine + pasteLineCount + 1);
-
-            let contextLines = [];
-            for (let i = startLine; i <= endLine; i++) {
-                // Prefix each line with its actual line number
-                contextLines.push(`${i + 1}: ${document.lineAt(i).text}`);
-            }
-            const surroundingContext = contextLines.join('\n');
-
-            // 1. Queue the violation to be sent to the backend database
-            this.securityEvents.push({
-                elapsed_seconds: this.getElapsedSeconds(),
-                event_type: 'unauthorized_paste',
-                file_path: vscode.workspace.asRelativePath(filePath).normalize('NFC'),
-                line_number: displayLine,
-                context: surroundingContext,
-                content: pastedText
-            });
-
-            // 3. Issue a strict visual error to the student
-            // Consider updating MESSAGES.SECURITY.UNAUTHORIZED_PASTE in messages.ts
-            // if the original text implies the paste was physically removed.
-            vscode.window.showErrorMessage(MESSAGES.SECURITY.UNAUTHORIZED_PASTE);
-        }
-    }
-
     public getPendingSecurityEvents() {
         const events = [...this.securityEvents];
         this.securityEvents = [];
         return events;
     }
-
 
     public requeueEvents(events: any[]) {
         this.securityEvents.unshift(...events);
