@@ -2,8 +2,8 @@
 
 import * as vscode from 'vscode';
 import { getKSTISO8601 } from './time';
-import { extensionLogBuffer } from '../extension';
 import { MESSAGES } from './messages';
+import { extensionLogBuffer } from './logging';
 
 export async function generateLocalReview(context: vscode.ExtensionContext, taskId: string): Promise<string> {
     const studentNumber = context.workspaceState.get<string>('studentNumber') || 'Unknown';
