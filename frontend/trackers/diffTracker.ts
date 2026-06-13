@@ -2,7 +2,7 @@
 
 import * as vscode from 'vscode';
 import { diff_match_patch } from 'diff-match-patch';
-import { logEvent } from '../extension';
+import { logEvent } from '../utils/logging';
 
 export class DiffTracker {
     private dmp = new diff_match_patch();
