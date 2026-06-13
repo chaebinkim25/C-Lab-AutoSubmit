@@ -1,29 +1,27 @@
 # C-Lab AutoSubmit System: Frontend (VS Code Extension) Specification
 
 ## Global Client Architectural Rules
+- **Single-Sided Information Flow:** 
+  The extension operates entirely autonomously. It embeds all curriculum definitions, logic, and PRNG seeding locally. It pushes data (submissions, telemetry) to the backend without relying on the server to dictate its state or provide operational information.
 
-- **Zero-Trust Local Storage & Ephemeral Tokens:** 
+- **Zero-Trust Local Storage & Ephemeral Sessions:** 
   The extension acts as a thin, stateless client. 
   All local source files (`.c`, `.h`) AND the local secret cache folder 
   MUST be securely overwritten with empty bytes and deleted upon any extension deactivation. 
-  **Any deactivation event immediately renders the current session token expired.**
+  **Any deactivation event immediately invalidates the local session state.**
 
 - **Task Navigation & Local Caching:** 
-  Upon executing `Start Lab`, the extension automatically provisions 
+  Upon executing `Start Lab`, the extension generates seeded task data from its local TS modules and automatically provisions
   the skeleton code for the **first task** into `main.c`. 
   It initializes a hidden local directory (e.g., `.clab_cache/`). 
   When the user navigates to a new task, the current `main.c` is saved to this cache. 
   If the user navigates back to a previously attempted task, 
-  the extension restores the code from the cache rather than fetching a new skeleton.
+  the extension restores the code from the cache rather than recreating a new skeleton.  
 
 - **String Normalization:** 
   All Korean text input via VS Code UI prompts (e.g., Student Name) 
   MUST be normalized to **NFC (Normalization Form Canonical Composition)** 
   before payload construction to prevent cross-platform rendering bugs.
-
-- **Time Synchronization:** 
-  The client MUST format all outgoing timestamps in **ISO 8601 KST** 
-  (`YYYY-MM-DDTHH:MM:SS+09:00`).
 
 ---
 
@@ -32,7 +30,8 @@
 The extension registers the following commands, exposing them to the VS Code Command Palette and dynamically morphing Status Bar UI buttons:
 
 - `c-lab.startLab`: 
-  Triggers the authentication flow, calls `POST /api/session/start`, 
+  Triggered via the VS Code Command Palette or Status Bar UI button.
+  Generates a local `session_id`, triggers the authentication flow, calls `POST /api/session/start`, 
   initializes the `.clab_cache` directory, and automatically provisions the first task.
   **UI Morph:** Transforms the main Status Bar button 
   into `c-lab.midSubmit` and reveals the Navigation/Next buttons.
@@ -50,14 +49,14 @@ The extension registers the following commands, exposing them to the VS Code Com
 - `c-lab.midSubmit`: 
   Triggered by the primary Lab Status Bar button during the `mid` and `final` phases.
   Silently bundles ONLY the currently active `main.c` 
-  and calls `POST /api/session/submit` (tagged `mid`). 
+  and queues the payload to the Telemetry Worker (tagged `mid`).
   **Does not show any confirmation dialog.** Includes a strict 3-second UI debounce 
   and boolean lock to prevent duplicate overlapping network requests.
 
 - `c-lab.finalSubmit`:
   Triggered by the morphed Next Task button on the last assignment.
   Triggers a Korean confirmation dialog. On accept, builds a local Markdown review, 
-  submits ONLY the review file as the `final` payload, and opens the review phase.
+  queues ONLY the review file as the `final` payload to the Telemetry Worker, executes an emergency bulk flush, and opens the review phase.
   Protected by the same 3-second debounce lock as mid-submissions.
   **UI Morph:** Hides navigation buttons 
   and morphs the primary Lab Status Bar button into `c-lab.endSession`.
@@ -93,9 +92,9 @@ Monitors active text editors using `vscode.workspace.onDidChangeTextDocument`.
 
 - **Delta Encoding:** Uses a library (e.g., `diff-match-patch`) to calculate true insertions/deletions rather than copying full text.
 
-- **Aggregation:** Batches deltas into 1-second KST intervals.
+- **Aggregation:** Batches deltas into 1-second intervals.
 
-- **Queue:** Pushes lightweight patches to a background worker queue that aggregates all telemetry and executes a single `POST /api/track/bulk` at randomized 10–20 second intervals.
+- **Queue:** Pushes lightweight patches to a background worker queue that aggregates all telemetry and executes a single `POST /api/track/bulk` at randomized 60–70 second intervals.
 
 - **Baseline Capture (Anchor Points):** Whenever a file is loaded into the editor—whether it is a **fresh skeleton** OR **restored from the local cache** during task navigation—the tracker immediately queues an initial payload with `is_baseline: true` containing the full file text. This is mandatory because all tasks share the same `main.c` file; sending a new baseline on every swap provides a clean chronological anchor for the backend to reconstruct the code history without cross-contamination between tasks.
 
@@ -131,7 +130,7 @@ Utilizes `vscode.debug.registerDebugAdapterTrackerFactory` targeting the `cppdbg
 
 The extension utilizes the native `fetch` API for all network requests, centralizing the backend host URL in `src/utils/config.ts` to allow safe and easy environment swapping, with the following characteristics:
 
-- **Authentication Header:** Automatically injects the stored `student_number` and dynamically generated `machine_id` into the body or headers of every `POST` request.
+- **Identity Headers:** Automatically injects the stored `machine_id`, and `session_id` into the HTTPS headers (`x-machine-id`, `x-session-id`) of every `POST` request.
 
 - **Diagnostics Catch-All:** Any unhandled network rejections, HTTP 500s from the server, or JSON parsing errors are caught, formatted with localized stack traces and environment data (OS, WSL status), and pushed to the global queue for `POST /api/track/bulk`.
 
@@ -144,30 +143,28 @@ Managed via the `deactivate()` hook in `extension.ts`.
 
 ### A. Unexpected Deactivation (The "Suspend" Path)
 
-- Triggered if the user closes VS Code or WSL drops before `c-lab.finalSubmit` is explicitly called. **Because tokens expire upon deactivation, this session cannot be resumed.**
+- Triggered if the user closes VS Code or WSL drops before `c-lab.finalSubmit` is explicitly called. **Because session identifiers purge upon deactivation, this session cannot be resumed.**
 
 1. Immediately constructs a `mid` submission payload from active memory.
 
-2. Dispatches `POST /api/session/submit` (tagged `mid`).
+2. Queues a `mid` submission payload and triggers an emergency flush via `POST /api/track/bulk`.
 
 3. Dispatches `POST /api/session/end` (tagged `suspended`).
 
 4. **Closes all active editor tabs** to prevent VS Code from caching and attempting to restore ephemeral virtual documents on the next launch.
 
-5. **Executes Zero-Trust Wipe:** Overwrites all `.c` files in `~/C-Lab-Workspace` with zero bytes and deletes them from disk. Token is discarded and invalidated.
+5. **Executes Zero-Trust Wipe:** Overwrites all `.c` files in `~/C-Lab-Workspace` with zero bytes and deletes them from disk. Local session state is purged.
 
 ### B. Expected Deactivation (The "Completed" Path)
 
 - Triggered explicitly via the `c-lab.finalSubmit` command.
 
-1. Explicitly invokes `stop()` on the Telemetry Worker to permanently halt the background transmission loop, preventing orphaned ghost events from triggering network errors.
+1. Queues a `final` submission payload and explicitly invokes `emergencyFlush()` on the Telemetry Worker to permanently halt the background transmission loop.
 
-2. Dispatches `POST /api/session/submit` (tagged `final`).
+2. Dispatches `POST /api/session/end` (tagged `completed`).
 
-3. Dispatches `POST /api/session/end` (tagged `completed`).
+3. **Executes Zero-Trust Wipe:** Overwrites and deletes local source files.
 
-4. **Executes Zero-Trust Wipe:** Overwrites and deletes local source files.
+4. If on Windows, executes a child process command (`wsl.exe -t <distro>`) to gracefully shut down the Linux VM in the background.
 
-5. If on Windows, executes a child process command (`wsl.exe -t <distro>`) to gracefully shut down the Linux VM in the background.
-
-6. Closes all active editor tabs including the virtual Markdown review document.
+5. Closes all active editor tabs including the virtual Markdown review document.
