@@ -3,7 +3,40 @@
 import * as vscode from 'vscode';
 import { updateStatusBar } from '../ui';
 import { globalSecurityTracker, globalDiffTracker } from './startLab';
-import { logEvent } from '../extension';
+import { logEvent } from '../utils/logging';
+
+function moveBreakpointsForFile(fromUri: vscode.Uri, toUri: vscode.Uri) {
+    const oldBreakpoints: vscode.SourceBreakpoint[] = [];
+    const newBreakpoints: vscode.Breakpoint[] = [];
+
+    for (const bp of vscode.debug.breakpoints) {
+        if (!(bp instanceof vscode.SourceBreakpoint)) {
+            continue;
+        }
+
+        if (bp.location.uri.toString() !== fromUri.toString()) {
+            continue;
+        }
+
+        oldBreakpoints.push(bp);
+
+        newBreakpoints.push(new vscode.SourceBreakpoint(
+            new vscode.Location(toUri, bp.location.range),
+            bp.enabled,
+            bp.condition,
+            bp.hitCondition,
+            bp.logMessage
+        ));
+    }
+
+    if (oldBreakpoints.length > 0) {
+        vscode.debug.removeBreakpoints(oldBreakpoints);
+    }
+
+    if (newBreakpoints.length > 0) {
+        vscode.debug.addBreakpoints(newBreakpoints);
+    }
+}
 
 export async function performTaskSwitch(
     context: vscode.ExtensionContext, 
@@ -36,6 +69,7 @@ export async function performTaskSwitch(
         } catch (e) {
             logEvent('TASK_CACHE_FAIL', currentTaskId);
         }
+        moveBreakpointsForFile(mainUri, cacheUri);
     }
 
     // 3. Restore target task from cache or provision new skeleton
@@ -47,6 +81,7 @@ export async function performTaskSwitch(
     try {
         const cachedBytes = await vscode.workspace.fs.readFile(targetCacheUri);
         newContent = Buffer.from(cachedBytes).toString('utf8');
+        moveBreakpointsForFile(targetCacheUri, targetMainUri);
         logEvent('TASK_RESTORE', newTaskId);
     } catch (e) {
         newContent = targetTask.skeleton_code;
@@ -76,6 +111,15 @@ export async function performTaskSwitch(
     }
 
     await vscode.window.showTextDocument(doc);
+
+    const editor = await vscode.window.showTextDocument(doc);
+
+    const top = new vscode.Position(0, 0);
+    editor.selection = new vscode.Selection(top, top);
+    editor.revealRange(
+        new vscode.Range(top, top),
+        vscode.TextEditorRevealType.AtTop
+    );
 
     // Wait for VS Code to flush pending asynchronous document changes
     await new Promise(resolve => setTimeout(resolve, 200));
