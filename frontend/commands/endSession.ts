@@ -10,7 +10,8 @@ import { globalTelemetryWorker, globalSecurityTracker, globalDiffTracker, global
 import { updateStatusBar } from '../ui';
 import { secureWipeWorkspace } from '../utils/secureWipe';
 import { terminateWSLSession } from '../utils/wslTeardown';
-import { setSessionCloseReason, logEvent, clearExtensionOutput, clearLogs } from '../extension';
+import { setSessionCloseReason } from '../extension';
+import { logEvent, clearExtensionOutput, clearLogs } from '../utils/logging';
 import { setLabRunning } from './startLab';
 
 export async function endSessionCommand(context: vscode.ExtensionContext) {
