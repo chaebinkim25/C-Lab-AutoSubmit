@@ -1,12 +1,12 @@
 // src/extension.ts
 
 import * as vscode from 'vscode';
-import { startLabCommand, globalTelemetryWorker } from './commands/startLab';
+import { startLabCommand, globalTelemetryWorker, setLabRunning } from './commands/startLab';
 import { midSubmitCommand, finalSubmitCommand } from './commands/submitTask';
 import { navigateTaskCommand } from './commands/navigateTask';
 import { nextTaskCommand } from './commands/nextTask';
 import { endSessionCommand } from './commands/endSession';
-import { ReviewContentProvider } from './providers/reviewProvider';
+import { globalReviewProvider, globalReviewProviderInit, ReviewContentProvider } from './providers/reviewProvider';
 import { checkCppToolsDependency } from './utils/dependencies';
 import { secureWipeWorkspace } from './utils/secureWipe';
 import { terminateWSLSession } from './utils/wslTeardown';
@@ -16,69 +16,16 @@ import { MESSAGES } from './utils/messages';
 import { getSessionId, clearSessionId } from './utils/token';
 import { getMachineId } from './utils/machineID';
 import { CONFIG } from './utils/config';
-
-// Export globally so commands can access the setContent method
-export let globalReviewProvider: ReviewContentProvider | null = null;
-
-export let labStatusBarItem: vscode.StatusBarItem;
+import { logEvent, logSubEvent, clearLogs, clearExtensionOutput, extLogger } from './utils/logging';
 
 let globalExtensionContext: vscode.ExtensionContext;
 
 export let sessionCloseReason: 'expected' | 'unexpected' = 'unexpected';
 
-export interface LogEntry {
-    timestamp: string;
-    elapsed_seconds: number;
-    code: keyof typeof MESSAGES.LOGS;
-    args: string[];
-}
-
-export const extensionLogBuffer: LogEntry[] = []; // Persistent history for the Final Review
-export const telemetryLogQueue: LogEntry[] = [];  // Volatile queue for the Background Worker
-
 export function setSessionCloseReason(reason: 'expected' | 'unexpected') {
     sessionCloseReason = reason;
 }
 
-let extensionStartTime = Date.now();
-
-export function resetExtensionStartTime() {
-    extensionStartTime = Date.now();
-}
-
-// Create a dedicated Output Channel for Track G
-const extLogger = vscode.window.createOutputChannel("C-Lab AutoSubmit");
-
-export function logEvent(code: keyof typeof MESSAGES.LOGS, ...args: string[]) {
-    const timestamp = getKSTISO8601();
-    const elapsed_seconds = Math.floor((Date.now() - extensionStartTime) / 1000);    
-    const msgTemplate = MESSAGES.LOGS[code] as any;
-    const displayStr = typeof msgTemplate === 'function' ? msgTemplate(...args) : msgTemplate;
-
-    // 1. Write readable localized string to the actual VS Code Output UI
-    extLogger.appendLine(`[${timestamp}] ${displayStr}`);
-
-    // 2. Store the event in both buffers
-    const entry = { timestamp, elapsed_seconds, code, args };
-    telemetryLogQueue.push(entry);
-    extensionLogBuffer.push(entry);
-
-    if (extensionLogBuffer.length > 2000) {    
-        extensionLogBuffer.shift();
-    }
-}
-
-export function clearLogs() {
-    extensionLogBuffer.length = 0;
-    telemetryLogQueue.length = 0;
-}
-
-export function clearExtensionOutput() {
-    extLogger.clear();
-}
-
-
-// This method is called when your extension is activated
 export async function activate(context: vscode.ExtensionContext) {
 
     globalExtensionContext = context;
@@ -107,19 +54,9 @@ export async function activate(context: vscode.ExtensionContext) {
         logEvent('EXT_FATAL_UNHANDLED', errStr);
     });
 
-    globalReviewProvider = new ReviewContentProvider();
-    const providerRegistration = vscode.workspace.registerTextDocumentContentProvider(
-        'clab-review',
-        globalReviewProvider
-    );
-    context.subscriptions.push(providerRegistration);
 
-    // Create and Initialize the Status Bar Item
-    // Alignment.Right, Priority 100 (keeps it far to the right, highly visible)
-    labStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    context.subscriptions.push(labStatusBarItem);
+    globalReviewProviderInit(context);
 
-    // Set initial state
     initializeStatusBar(context);
 
     // Register the startLab command
@@ -240,6 +177,7 @@ export async function deactivate(): Promise<void> {
 
     logEvent('EXT_TEARDOWN_DONE');
 
+    setLabRunning(false);
     clearExtensionOutput();
     clearLogs();
 }
