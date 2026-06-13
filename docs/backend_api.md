@@ -93,7 +93,7 @@ A schema-less unified endpoint to dramatically reduce network overhead by combin
     }
   ],
   "extension_logs": [
-        "45|EXT_FATAL_UNCAUGHT"
+    "45|EXT_FATAL_UNCAUGHT"
   ],
   "terminal_events": [
     {
