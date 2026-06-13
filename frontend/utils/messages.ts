@@ -17,7 +17,7 @@ export const MESSAGES = {
     REVIEW: {
         CONTENT_NOT_FOUND: "/* 코드를 불러올 수 없습니다. (Content not found) */",
         HEADER: (student: string, time: string) => `# C-Lab 실습 최종 리뷰\n\n**학번:** ${student}\n**제출 시간:** ${time}\n\n---\n\n`,
-        CODE_SECTION: "## 작성한 코드\n\n",
+        CODE_SECTION: "## 제출된 코드\n\n",
         CURRENT_TASK: (taskId: string) => `### 현재 과제 (${taskId})\n`,
         LOG_SECTION: "## 시스템 로그\n\n"
     },
@@ -49,7 +49,8 @@ export const MESSAGES = {
     SUCCESS: {
         RESUMED_TASK: (task: string) => `환영합니다! 진행 중이던 ${task}을(를) 복원했습니다.`,
         STARTED_NEW: "환영합니다! 새로운 실습을 시작합니다.",
-        TASK_SUBMITTED: "제출 완료! 다음 과제를 시작합니다.",
+        TASK_SUBMITTED_LAST: "제출 완료! 마지막 과제입니다.",
+        TASK_SUBMITTED_AND_MOVE: "제출 완료! 다음 과제를 시작합니다.",
         FINAL_SUBMITTED: "최종 제출이 성공적으로 완료되었습니다! 수고하셨습니다.",
     },
     PROMPTS: {
@@ -96,7 +97,11 @@ export const MESSAGES = {
 
         REVIEW_OPENED: "Native markdown preview opened successfully.",
 
-        START_EXEC: "Executing c-lab.startLab...",
+        START_EXEC: "Starting c-lab.startLab...",
+        START_IS_STARTING: "          in the middle of starting process",
+        START_IS_LAB_RUNNING: "          in the middle of the lab",
+        START_ABORT: "Starting c-lab.startLab aborted",
+
         START_ABORT_ID: "Start Lab aborted: No student number provided.",
         START_ABORT_NAME: "Start Lab aborted: No name provided.",
         START_AUTH: (id: string, name: string, mid: string) => `Auth Ready -> Student: ${id}, Name: ${name}, Machine: ${mid}`,
@@ -112,7 +117,7 @@ export const MESSAGES = {
 
         TASK_CACHE_FAIL: (id: string) => `Warning: Failed to cache ${id}`,
         TASK_RESTORE: (id: string) => `Restored ${id} from cache.`,
-        TASK_PROVISION: (id: string) => `Provisioned fresh skeleton for ${id}.`,        
+        TASK_PROVISION: (id: string) => `Provisioned fresh ${id}.`,        
 
         EXT_ACTIVATED: "C-Lab AutoSubmit activated.",
         EXT_NO_CPP: "Extension halting: Missing required C/C++ dependency.",
@@ -170,9 +175,15 @@ export const MESSAGES = {
         UTIL_MID_NEW: "No existing Machine ID found. Generating new secure UUID...",
         UTIL_MID_LOAD: "Loaded existing Machine ID.",
 
-        UTIL_POL_ENFORCE: "Enforcing C-Lab workspace policies...",
-        UTIL_POL_APPLIED: "Policies successfully applied to workspace settings.",
-        UTIL_POL_FAIL: (err: string) => `Failed to enforce policies: ${err}`,
+        UTIL_POL_ENFORCE: "Enforcing workspace policies...",
+        UTIL_POL_WORKSPACE_FILE: (fsPath: string) => `          workspace file path is ${fsPath}`,
+        UTIL_POL_WORKSPACE_FOLDERS: (len: number) => `          workspace folders count is ${len}`,
+        UTIL_POL_GDBINIT: "          writing to ~/.gdbinit: set debuginfod enabled off\\n",
+        UTIL_POL_GDBINIT_FAIL: "          writing to ~/.gdbinit failed",
+        UTIL_POL_UPDATE: (item: string, value: string) => `          ${item}: ${value}`,
+        UTIL_POL_FAIL: (item:string, err: string) => `          ${item} - ${err}`,
+        UTIL_POL_APPLIED: "Enforcing workspace policies successful.",
+
         UTIL_POL_WATCH: "Policy Watchdog activated. Monitoring settings silently...",
         UTIL_POL_ALERT: (as: boolean, cp: boolean, fmt: boolean) => `POLICY ALERT: Workspace settings modified by student! (AutoSave: ${as}, Copilot: ${cp}, Formatting: ${fmt})`,
 
