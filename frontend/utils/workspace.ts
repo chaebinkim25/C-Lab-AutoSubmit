@@ -6,7 +6,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
 import { MESSAGES } from './messages';
-import { logEvent } from '../extension';
+import { logEvent } from './logging';
 
 export async function ensureSecureWorkspace(): Promise<boolean> {
     const isWindowsHost = os.platform() === 'win32';
