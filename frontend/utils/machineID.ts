@@ -2,7 +2,8 @@
 
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import { logEvent } from '../extension';
+import { logEvent } from './logging';
+
 
 export function getMachineId(context: vscode.ExtensionContext): string {
     const MACHINE_ID_KEY = 'c-lab-autosubmit.machineId';
