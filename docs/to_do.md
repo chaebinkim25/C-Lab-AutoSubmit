@@ -204,4 +204,10 @@
 - [x] frontend: make mid submission move to next task
 
 ## Phase 10: Network resilience update
-- [ ] remove all get operation from backend. store all task info in frontend.
+- [x] remove all get operation from backend. store all task info in frontend.
+- [x] remove /api/check-time
+- [x] do not activate on startup. only manual activation
+- [x] show start lab button after activation
+- [x] remove /api/health-check
+- [x] backend does not tell anyting to frontend. single sided information flow from frontend to backend.
+- [ ] remove issuing the initial session token functionality during `POST /api/session/start`
